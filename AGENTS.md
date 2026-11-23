@@ -26,6 +26,11 @@ only if state, pending items, or decisions changed. No diary entries.
 - `DECISIONS.md`: durable decisions (`DEC-NNN`; `ACTIVE`/`REPLACED`/`DISCARDED`;
   link implementing artifacts; optional `changelog:` line for user-visible changes).
 
+## Branches
+
+- `development`: default branch; work branches start from it and PRs target it.
+- `main`: releases only; changes arrive from `development` on explicit request.
+
 ## Language
 
 All project content (code, docs, comments, commits, PRs, logs) is English.
