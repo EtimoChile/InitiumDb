@@ -13,7 +13,7 @@
   <description>Configuration-driven preparation of relational database test data</description>
 
   <properties>
-    <maven.compiler.release>21</maven.compiler.release>
+    <maven.compiler.release>25</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <junit.version>5.11.4</junit.version>
     <assertj.version>3.27.3</assertj.version>
@@ -61,7 +61,7 @@
         <artifactId>maven-surefire-plugin</artifactId>
         <version>3.5.2</version>
         <configuration>
-          <excludedGroups>oracle_integration,postgres_integration</excludedGroups>
+          <excludedGroups>oracle_integration,postgresql_integration</excludedGroups>
         </configuration>
       </plugin>
 
@@ -98,9 +98,9 @@
         </plugins>
       </build>
     </profile>
-    <!-- mvn test -Ppostgres-integration: requires an explicitly configured disposable PostgreSQL DB. -->
+    <!-- mvn test -Ppostgresql-integration: requires an explicitly configured disposable PostgreSQL DB. -->
     <profile>
-      <id>postgres-integration</id>
+      <id>postgresql-integration</id>
       <build>
         <plugins>
           <plugin>
@@ -108,7 +108,7 @@
             <artifactId>maven-surefire-plugin</artifactId>
             <configuration>
               <excludedGroups combine.self="override"/>
-              <groups>postgres_integration</groups>
+              <groups>postgresql_integration</groups>
             </configuration>
           </plugin>
         </plugins>

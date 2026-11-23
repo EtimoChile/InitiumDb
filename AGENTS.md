@@ -1,16 +1,19 @@
 # InitiumDb constitution
 
-InitiumDb is a Test Data Management (TDM) tool: it provisions, masks, subsets,
-and refreshes test databases. It touches real data and schemas; rules below
-are mandatory.
+InitiumDb captures selected records from development/QA databases and
+prepares them again before automated test suites (`idb-capture`,
+`idb-prepare`; see `README.md`). It touches real data; rules below are
+mandatory.
 
 ## Sources of truth (highest first)
 
 1. `AGENTS.md`
 2. `README.md`: public behavior, configuration, CLI.
-3. Engine-independent contract in `initiumdb/db/` (adapters implement it).
-4. Code, config, tests.
-5. `CHANGELOG.md`: history only.
+3. `docs/prompts/test-authoring.md`, `docs/prompts/test-organization.md`:
+   normative for tests. `ACTIVE` decisions in `docs/ai-state/DECISIONS.md`.
+4. Engine-independent contract in `cl.etimo.initiumdb.db`.
+5. Code, config, tests.
+6. `CHANGELOG.md`: history only.
 
 Same-rank conflict: do not choose silently; log it in `docs/ai-state/PENDING.md`
 and change only what is unambiguous.
@@ -38,12 +41,15 @@ All project content (code, docs, comments, commits, PRs, logs) is English.
 ## Architecture
 
 - Maven project; sources in `src/main/java/cl/etimo/initiumdb/`.
-- `cl.etimo.initiumdb.core`: engine-independent; no SQL or driver types.
+- `cl.etimo.initiumdb.core`: engine-independent; standard JDBC (`java.sql`)
+  is allowed, engine-specific SQL or driver types are not.
 - `cl.etimo.initiumdb.db` / `cl.etimo.initiumdb.db.<engine>`: engine contract and
-  engine specifics. New capability: expose in the engine contract first, then
-  implement and test per adapter.
-- `cl.etimo.initiumdb.cli`: thin entry points; delegate to core; meaningful exit codes.
-- Java 21, JDBC, DBUnit, YAML; conventions in `pom.xml` (compiler runs
+  engine specifics, kept minimal: DBUnit covers most engine-specific behavior.
+  New capability: expose in the engine contract first, then implement and
+  test per adapter.
+- `cl.etimo.initiumdb.cli`: thin entry points; delegate to core; exit code
+  `0` on success, `1` on any failure.
+- Java 25 (LTS), JDBC, DBUnit, YAML; conventions in `pom.xml` (compiler runs
   `-Xlint:all -Werror`; formatting by Spotless/google-java-format).
 - Do not change behavior, config format, and docs together without tests.
 
@@ -51,11 +57,13 @@ All project content (code, docs, comments, commits, PRs, logs) is English.
 
 - Never version credentials, DSNs, keys, data dumps, or real personal data.
 - Never print decrypted secrets.
-- Masking/anonymization must be irreversible by default and never log
-  unmasked values.
-- Treat DDL, grants, truncates, deletes, and data copies as destructive.
+- InitiumDb does not mask or anonymize; never present it as doing so. Captured
+  datasets must be reviewed before versioning.
+- Never log credentials or JDBC secrets.
+- Treat dataset application, SQL hooks, deletes, and data copies as destructive.
   Never run against a real database without explicit authorization and an
-  identified environment; tests use doubles or user-declared disposable DBs.
+  identified environment; never target production; tests use doubles or
+  user-declared disposable DBs.
 - Do not weaken validation or error handling to make a test pass.
 
 ## Tests
@@ -69,7 +77,7 @@ mvn spotless:check
 mvn verify
 ```
 
-Integration tests are opt-in (`-Poracle-integration`, `-Ppostgres-integration`)
+Integration tests are opt-in (`-Poracle-integration`, `-Ppostgresql-integration`)
 and require a user-declared disposable DB.
 
 Never claim a check passed unless it ran. Behavior changes need tests and docs.

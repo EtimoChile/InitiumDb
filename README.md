@@ -17,7 +17,7 @@ InitiumDb is intended **only for development and QA databases, never production*
 - **Keep credentials outside test artifacts.** Secrets are resolved at runtime, for local executions and CI/CD alike.
 - **Respect declared order.** Database steps and table rows are processed in the order specified; InitiumDb does not discover or reorder foreign-key dependencies.
 - **Stay framework-agnostic.** Playwright is the current E2E framework at SII, but InitiumDb does not depend on it.
-- **Fail simply.** On error, report the failure and return a nonzero exit code. There are no checkpoints or partial-run resumption mechanisms; the operator or pipeline reruns the command from the beginning.
+- **Fail simply.** On error, report the failure and return exit code `1`. There are no checkpoints or partial-run resumption mechanisms; the operator or pipeline reruns the command from the beginning.
 
 ## Scope and design principles
 
@@ -225,14 +225,14 @@ If `idb-prepare` exits with a nonzero status, the pipeline should fail that step
 - **Dataset format:** DBUnit Flat XML.
 - **Configuration format:** YAML.
 - **Initial target engines:** Oracle and PostgreSQL.
-- **Distribution:** two Java CLI executables (`idb-capture` and `idb-prepare`); exact packaging and minimum Java version **to be defined**.
+- **Distribution:** two Java CLI executables (`idb-capture` and `idb-prepare`); minimum Java version is 25 (LTS); exact packaging **to be defined**.
 
 Engine-specific behavior should be isolated behind adapters where required. There is no requirement for database-resident InitiumDb code or objects.
 
 ## Errors, repeatability and observability
 
 - Commands execute sequentially and stop on failure.
-- Successful execution returns exit code `0`; failure returns a nonzero code.
+- Successful execution returns exit code `0`; any failure returns `1`.
 - Logs identify the case, environment, database alias, current step and error cause without revealing credentials.
 - There is no dedicated `validate` command, `--mode` switch, preview mode, persistent status table or execution checkpoint.
 - Input validation occurs naturally when commands read configuration and files; invalid input fails the command.
@@ -259,7 +259,7 @@ The following items should be settled before considering this README an implemen
 4. Secret-provider contract and integration with TeamCity/BYD.
 5. Handling of case-specific cleanup, sequence values, triggers and generated identifiers.
 6. Portability rules for datasets captured in one environment and applied to another.
-7. Java baseline, packaging, installation and release process.
+7. Packaging, installation and release process.
 
 ## License and governance
 
