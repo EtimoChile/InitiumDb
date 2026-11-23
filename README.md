@@ -63,7 +63,9 @@ The `--environment` argument selects `<environment>.yml` in the configuration di
 
 The initial dataset operation is DBUnit **`REFRESH`**: update matching rows and insert missing rows according to DBUnit's key matching. `REFRESH` **does not delete unrelated or extra rows**, so `idb-prepare` does not promise to restore an entire database or table to an exact snapshot. Optional SQL hooks can perform case-specific cleanup when needed.
 
-A failure stops the run. Previously committed changes may remain, especially across multiple databases; there is **no distributed transaction**. Re-running the entire `idb-prepare` command is the recovery strategy. Consequently, datasets and SQL hooks should be designed to be safely repeatable.
+SQL hooks (`preSql`, `postSql`) run in **autocommit**, exactly as written: each statement is committed as it runs, and a hook that contains its own `COMMIT`, `ROLLBACK` or DDL behaves as the engine defines. The dataset is applied in **one short transaction** (all or nothing), because DBUnit issues its statements row by row and autocommit would otherwise commit once per row. Nothing is rolled back across hooks, the dataset or steps: a failure stops the run, previously committed changes remain, and there is **no distributed transaction**. Re-running the entire `idb-prepare` command is the recovery strategy, so SQL hooks must be **idempotent**: for example `DELETE` then `INSERT`, `MERGE`, or `TRUNCATE`; avoid relative updates such as `balance = balance + 100` and statements that advance sequences.
+
+**SQL hooks are plain SQL, by design.** A hook script is a sequence of SQL statements, each ending in `;`. InitiumDb does not run procedural blocks (PL/SQL, `DO $$ ... $$`): it is not a scripting runtime, and hooks stay declarative and comparable across engines. Repeatability comes from writing idempotent statements, not from procedural logic.
 
 ## Example repository layout
 
@@ -288,13 +290,12 @@ Engine-specific behavior is isolated in a thin per-engine profile (DBUnit data t
 
 The following items should be settled before considering this README an implementation contract:
 
-1. Transaction boundaries for each database step and each optional SQL hook.
-2. Precise DBUnit table-order handling and metadata requirements for Oracle/PostgreSQL.
-3. Whether the configuration directory needs a discovery mechanism beyond `--config-dir` and `~/.initiumdb`.
-4. Secret-provider contract and integration with CI/CD and proprietary CD mechanisms.
-5. Handling of case-specific cleanup, sequence values, triggers and generated identifiers.
-6. Portability rules for datasets captured in one environment and applied to another.
-7. Packaging, installation and release process.
+1. Precise DBUnit table-order handling and metadata requirements for Oracle/PostgreSQL.
+2. Whether the configuration directory needs a discovery mechanism beyond `--config-dir` and `~/.initiumdb`.
+3. Secret-provider contract and integration with CI/CD and proprietary CD mechanisms.
+4. Handling of case-specific cleanup, sequence values, triggers and generated identifiers.
+5. Portability rules for datasets captured in one environment and applied to another.
+6. Packaging, installation and release process.
 
 ## License and governance
 

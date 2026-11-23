@@ -47,3 +47,22 @@ tests (Docker).
 Artifacts: `README.md`, `db/SqlIdentifiers`, `OracleEngine`, `PostgresqlEngine`,
 `integration/*RoundTripTest`.
 changelog: Use object names exactly as written; quote the session schema.
+
+DEC-006 | ACTIVE | Prepare runs in autocommit; dataset in one transaction
+`idb-prepare` is recovered by re-running it from the first step, so manual
+commit boundaries add nothing and make hook behavior depend on the engine
+(Oracle DDL commits implicitly). `preSql`/`postSql` run in autocommit as written.
+DBUnit `REFRESH` runs statement by statement (verified in 3.0.0), so under
+autocommit it would commit per row; it is applied in one short transaction
+instead (no user SQL inside). Hooks must be idempotent (README).
+Artifacts: `README.md`, `core/PrepareService`, `PrepareTest`.
+changelog: Run SQL hooks in autocommit and apply the dataset in a single transaction.
+
+DEC-007 | ACTIVE | SQL hooks are plain statements, no procedural blocks
+A hook script is a sequence of SQL statements ending in `;`. InitiumDb does
+not parse or run procedural blocks (PL/SQL, `DO $$ ... $$`): that would make it
+a scripting runtime and tie hooks to each engine's procedural dialect. Hooks
+stay declarative; repeatability comes from idempotent statements (DEC-006). Any
+conditional execution must be a small notation over plain statements, not
+procedural code.
+Artifacts: `README.md`, `core/SqlScript`.

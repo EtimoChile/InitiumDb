@@ -135,8 +135,36 @@ class PrepareTest {
   }
 
   @Test
-  void aFailingPostSqlRollsBackTheWholeStep() {
-    // Spec: README.md > idb-prepare (failure stops the run)
+  void sqlScriptKeepsSemicolonsAndEscapedQuotesInsideQuotedIdentifiers() {
+    // Spec: README.md > idb-prepare (SQL hooks); "SQL identifiers and quoting"
+    assertThat(SqlScript.statements("SELECT \"a;b\" FROM t; SELECT \"x\"\";y\" FROM t;"))
+        .isEqualTo(List.of("SELECT \"a;b\" FROM t", "SELECT \"x\"\";y\" FROM t"));
+    assertThatThrownBy(() -> SqlScript.statements("SELECT \"oops;"))
+        .isInstanceOf(InitiumDbException.class)
+        .hasMessageContaining("quoted identifier");
+  }
+
+  @Test
+  void aQuotedIdentifierWithASemicolonWorksInAHook() {
+    // Spec: README.md > idb-prepare (SQL hooks)
+    // Given: a column alias containing a semicolon, inside a statement
+    fx.write(
+        "db/CRM/post.sql",
+        "UPDATE CUSTOMER SET NAME = (SELECT MAX(NAME) AS \"a;b\" FROM CUSTOMER)"
+            + " WHERE CUSTOMER_ID = 1001;\n");
+    fx.writeCase(
+        "version: 1\nname: t\ndatabases:\n  - alias: CRM\n    dataset: db/CRM/dataset.xml\n"
+            + "    postSql: db/CRM/post.sql\n");
+    // When
+    CliRun run = fx.prepare();
+    // Then
+    assertThat(run.exitCode()).as(run.err()).isZero();
+    assertThat(fx.value("SELECT NAME FROM CUSTOMER WHERE CUSTOMER_ID = 1001")).isEqualTo("New Two");
+  }
+
+  @Test
+  void aFailingPostSqlKeepsTheDatasetAlreadyApplied() {
+    // Spec: README.md > idb-prepare (hooks run in autocommit; failure stops the run)
     // Given
     fx.write("db/CRM/post.sql", "UPDATE NO_SUCH_TABLE SET X = 1;");
     fx.writeCase(
@@ -146,7 +174,29 @@ class PrepareTest {
     CliRun run = fx.prepare();
     // Then
     assertThat(run.exitCode()).isEqualTo(1);
-    assertThat(fx.value("SELECT COUNT(*) FROM CUSTOMER")).isEqualTo("0");
+    assertThat(fx.value("SELECT COUNT(*) FROM CUSTOMER")).isEqualTo("2");
+  }
+
+  @Test
+  void aFailingDatasetRollsBackAllItsRowsButKeepsPreSql() {
+    // Spec: README.md > idb-prepare (dataset is all or nothing; hooks are not rolled back)
+    // Given: preSql inserts a row; the dataset's second table has an unknown column
+    fx.write("db/CRM/pre.sql", "INSERT INTO CUSTOMER VALUES (9000, 'Pre', 'ACTIVE');");
+    fx.write(
+        "db/CRM/dataset.xml",
+        "<dataset>\n"
+            + "  <CUSTOMER CUSTOMER_ID=\"1001\" NAME=\"New One\" STATUS=\"ACTIVE\"/>\n"
+            + "  <ACCOUNT NO_SUCH_COLUMN=\"1\"/>\n"
+            + "</dataset>\n");
+    fx.writeCase(
+        "version: 1\nname: t\ndatabases:\n  - alias: CRM\n    dataset: db/CRM/dataset.xml\n"
+            + "    preSql: db/CRM/pre.sql\n");
+    // When
+    CliRun run = fx.prepare();
+    // Then
+    assertThat(run.exitCode()).isEqualTo(1);
+    assertThat(fx.value("SELECT COUNT(*) FROM CUSTOMER")).isEqualTo("1");
+    assertThat(fx.value("SELECT NAME FROM CUSTOMER")).isEqualTo("Pre");
   }
 
   @Test

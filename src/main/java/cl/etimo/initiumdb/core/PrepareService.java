@@ -22,8 +22,9 @@ import org.dbunit.operation.DatabaseOperation;
  * Implements {@code idb-prepare}: per step, optional {@code preSql}, DBUnit {@code REFRESH} of the
  * dataset in its declared table order, then optional {@code postSql}.
  *
- * <p>Each step is one transaction: committed when the whole step succeeds and rolled back when any
- * part fails. Earlier steps stay committed (there is no distributed transaction).
+ * <p>SQL hooks run in autocommit, exactly as written. The dataset is applied in one transaction
+ * (all or nothing). Nothing is rolled back across hooks, the dataset or steps; a failed run is
+ * recovered by running the whole command again (DEC-006).
  */
 public final class PrepareService {
 
@@ -62,18 +63,32 @@ public final class PrepareService {
         new FlatXmlDataSetBuilder().setColumnSensing(true).build(step.dataset().toFile());
 
     try (Connection connection = resolver.resolve(environment.environment(), step.alias())) {
-      connection.setAutoCommit(false);
-      try {
-        engine.useSchema(connection, schema);
-        execute(connection, pre);
-        IDatabaseConnection dbunit = DbUnitSession.open(connection, engine, schema);
-        DatabaseOperation.REFRESH.execute(dbunit, dataSet);
-        execute(connection, post);
-        connection.commit();
-      } catch (SQLException | DatabaseUnitException | RuntimeException e) {
-        rollbackQuietly(connection);
-        throw e;
-      }
+      connection.setAutoCommit(true);
+      engine.useSchema(connection, schema);
+      execute(connection, pre);
+      refresh(connection, engine, schema, dataSet);
+      execute(connection, post);
+    }
+  }
+
+  /**
+   * DBUnit's {@code REFRESH} issues its statements row by row; under autocommit that would commit
+   * once per row. The dataset is applied in one short transaction instead, so it is both efficient
+   * and all-or-nothing. It contains no user SQL, so no hook can interfere with the boundary.
+   */
+  private static void refresh(
+      Connection connection, DatabaseEngine engine, String schema, IDataSet dataSet)
+      throws SQLException, DatabaseUnitException {
+    IDatabaseConnection dbunit = DbUnitSession.open(connection, engine, schema);
+    connection.setAutoCommit(false);
+    try {
+      DatabaseOperation.REFRESH.execute(dbunit, dataSet);
+      connection.commit();
+    } catch (SQLException | DatabaseUnitException | RuntimeException e) {
+      rollbackQuietly(connection);
+      throw e;
+    } finally {
+      connection.setAutoCommit(true);
     }
   }
 
