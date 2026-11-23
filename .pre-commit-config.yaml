@@ -1,0 +1,14 @@
+repos:
+  - repo: local
+    hooks:
+      - id: spotless-check
+        name: spotless check
+        entry: mvn -q spotless:check
+        language: system
+        types: [java]
+        pass_filenames: false
+      - id: maven-test
+        name: mvn test
+        entry: mvn -q test
+        language: system
+        pass_filenames: false
