@@ -6,7 +6,7 @@ InitiumDb captures selected records from development or QA databases and prepare
 
 InitiumDb is intended **only for development and QA databases, never production**. It does not provision databases, create schemas or control objects, manage grants, or execute application tests.
 
-> **Project status:** design specification. The CLI, configuration examples and behavior described below are the intended contract, not a claim that an implementation has already been released. Items explicitly marked *to be defined* remain open.
+> **Project status:** under development. `idb-init`, `idb-crypt`, `idb-capture` and `idb-prepare` are implemented for Oracle and PostgreSQL, but no release has been published. Items explicitly marked *to be defined* remain open.
 
 ## Overview
 
@@ -16,13 +16,13 @@ InitiumDb is intended **only for development and QA databases, never production*
 - **Separate logical and physical configuration.** A case references logical database aliases; environment configuration maps them to JDBC connections.
 - **Keep credentials outside test artifacts.** Secrets are resolved at runtime, for local executions and CI/CD alike.
 - **Respect declared order.** Database steps and table rows are processed in the order specified; InitiumDb does not discover or reorder foreign-key dependencies.
-- **Stay framework-agnostic.** Playwright is the current E2E framework at SII, but InitiumDb does not depend on it.
+- **Stay framework-agnostic.** Playwright is a typical E2E framework to pair it with, but InitiumDb does not depend on it.
 - **Fail simply.** On error, report the failure and return exit code `1`. There are no checkpoints or partial-run resumption mechanisms; the operator or pipeline reruns the command from the beginning.
 
 ## Scope and design principles
 
 1. **Non-production use only.** Intended targets are development and QA databases. Access controls and independently verified connection settings should prevent accidental production access; a YAML environment label alone is not a security boundary.
-2. **Four executables only.** `idb-capture` and `idb-prepare` operate on data; `idb-init` and `idb-crypt` set up configuration and local secrets (same usage as LimitsDb's `ldb-init` and `ldb-crypt`). There is no `validate`, `replay`, or `--mode` interface.
+2. **Four executables only.** `idb-capture` and `idb-prepare` operate on data; `idb-init` and `idb-crypt` set up configuration and local secrets. There is no `validate`, `replay`, or `--mode` interface.
 3. **Sequential execution.** No parallelism or dependency graph. The author of the case controls the order of database steps, queries and dataset tables.
 4. **No database installation.** No InitiumDb tables, locks, users, roles, grants, sequences or other objects are created.
 5. **No automatic recovery.** No persisted execution state or resume-from-checkpoint logic.
@@ -33,15 +33,15 @@ InitiumDb is intended **only for development and QA databases, never production*
 ## Commands
 
 ```bash
-idb-capture --case path/to/testdata/case.yml --environment dev
-idb-prepare --case path/to/testdata/case.yml --environment qa
-idb-init --case path/to/testdata/case.yml --environment dev
-idb-crypt --environment dev
+idb-capture --case path/to/testdata/case.yml --environment dev [--config-dir dir]
+idb-prepare --case path/to/testdata/case.yml --environment qa [--config-dir dir]
+idb-init --case path/to/testdata/case.yml --environment dev [--config-dir dir] [--overwrite]
+idb-crypt --environment dev [--case path/to/case.yml] [--config-dir dir]
 ```
 
 `idb-init` and `idb-crypt` are described under [Initialization](#initialization) and [Local secrets](#local-secrets). `idb-capture` and `idb-prepare` may run manually. `idb-capture` is **not** part of CI/CD. `idb-prepare` is normally invoked by CI/CD before tests, but can also be invoked manually.
 
-The `--environment` argument identifies an external environment configuration. An explicit configuration path option may be provided by the implementation; its exact CLI spelling is **to be defined**.
+The `--environment` argument selects `<environment>.yml` in the configuration directory, which is `~/.initiumdb` unless `--config-dir` is given.
 
 ### `idb-capture`
 
@@ -140,6 +140,17 @@ tables:
 
 The order of `tables` is significant. Query results must be serialized into a dataset preserving the configured table order. For deterministic data files, queries should specify an `ORDER BY` where row order matters. Queries are supplied by trusted project maintainers; they are not a general-purpose untrusted SQL input interface.
 
+### SQL identifiers and quoting
+
+Two kinds of values follow two different rules:
+
+- **Fields that name database objects** (`schema`, `tables[].name`) are written **exactly as in the data dictionary**, with the same case. InitiumDb never folds their case. When it must put one into a statement of its own (such as the session schema), it double-quotes it so the engine takes it literally. For example, `schema: CRM_OWNER` is right for an Oracle schema created unquoted, and `schema: crm_owner` for a PostgreSQL one. Table names may have mixed case (`Customer`) and are matched exactly.
+- **SQL and SQL fragments** (`sql` in `queries.yml`, `preSql` / `postSql` scripts) are sent to the engine unchanged, so the engine's own rules for case and quoting apply: unquoted identifiers fold (upper case in Oracle, lower case in PostgreSQL) and names with mixed case or special characters need double quotes.
+
+When applying a dataset, DBUnit resolves table and column names against the database metadata and generates quoted SQL, so names with mixed case or special characters are handled. Table and column names become element and attribute names in the Flat XML dataset, so they must be valid XML names (no spaces). `idb-capture` fails with a message naming the table or column, and leaves any existing dataset untouched.
+
+DBUnit folds a schema name to the engine's case on its own; InitiumDb overrides that so schemas created with quoted mixed-case names (for example `"CrmOwner"`) work too. This is verified against PostgreSQL and Oracle containers (`-Ppostgresql-integration`, `-Poracle-integration`; they need a running Docker).
+
 ### Captured dataset
 
 Example `db/CRM/dataset.xml`:
@@ -196,7 +207,7 @@ public interface ConnectionResolver {
 }
 ```
 
-A generic JDBC resolver may obtain credentials from environment variables or an external secret provider. A corporate resolver may integrate with **BYD** without coupling the open-source core to BYD. The exact credential-provider interface, provider selection, local secret-file format (if any), and TeamCity-to-BYD access mechanism are **to be defined**.
+The built-in resolver reads each password from the `IDB_CREDENTIAL_<NAME>` environment variable (the environment file's `credential` name, upper-cased, with non-alphanumerics replaced by `_`), falling back to the encrypted local secrets file (see [Local secrets](#local-secrets)). A corporate resolver may integrate with a **proprietary CD mechanism** without coupling the open-source core to it. The exact external credential-provider contract and CI-to-CD-mechanism access are **to be defined**.
 
 ### Initialization
 
@@ -216,19 +227,19 @@ idb-crypt --environment dev [--case path/to/case.yml] [--config-dir dir]
 
 `<config-dir>/<environment>.secrets.json` maps each `credential` name of the environment file to its password. `idb-crypt` encrypts every non-empty cleartext value in place with AES-256-GCM (`enc:v1:aes256gcm:<nonce>:<ciphertext>`); already encrypted and empty values are left untouched, so it is idempotent. A missing, malformed or non-string-valued secrets file fails with exit code `1`. `--case` is accepted so an `idb-prepare` command line can be reused, but it is not read.
 
-Master key: the `IDB_MASTER_KEY` environment variable (hex of 64 chars, base64 of 32 bytes, or a raw 32-byte value); otherwise `~/.initiumdb/idb.key`, created with owner-only permissions where the file system supports POSIX permissions. This is protection of secrets at rest on one machine, not a vault: anyone holding the key can decrypt. Neither command prints decrypted secrets, and error messages never echo secrets or key material. How CI/CD supplies the key or integrates a corporate provider (BYD) remains **to be defined**.
+Master key: the `IDB_MASTER_KEY` environment variable (hex of 64 chars, base64 of 32 bytes, or a raw 32-byte value); otherwise `~/.initiumdb/idb.key`, created with owner-only permissions where the file system supports POSIX permissions. This is protection of secrets at rest on one machine, not a vault: anyone holding the key can decrypt. Neither command prints decrypted secrets, and error messages never echo secrets or key material. How CI/CD supplies the key or integrates a corporate provider (e.g. a proprietary CD mechanism) remains **to be defined**.
 
 A plain environment label such as `environment: qa` cannot establish that the JDBC endpoint is truly non-production. Deployments should use restricted database accounts and enforce environment boundaries outside InitiumDb as well.
 
 ## Integration with CI/CD and Playwright
 
-At SII, the intended sequence is:
+The intended sequence is:
 
 ```text
-Application deployment (BYD)
+Application deployment (CD)
           |
           v
-idb-prepare (TeamCity)
+idb-prepare (CI server)
           |
           v
 Playwright E2E tests
@@ -237,7 +248,7 @@ Playwright E2E tests
 Test results
 ```
 
-TeamCity invokes InitiumDb as a separate command. Playwright tests do not need to import InitiumDb or call its API. `idb-prepare` is executed **once before the configured suite**, rather than between individual tests.
+The CI server invokes InitiumDb as a separate command. Playwright tests do not need to import InitiumDb or call its API. `idb-prepare` is executed **once before the configured suite**, rather than between individual tests.
 
 If `idb-prepare` exits with a nonzero status, the pipeline should fail that step and not proceed to E2E tests.
 
@@ -251,7 +262,7 @@ If `idb-prepare` exits with a nonzero status, the pipeline should fail that step
 - **Initial target engines:** Oracle and PostgreSQL.
 - **Distribution:** four Java CLI executables (`idb-capture`, `idb-prepare`, `idb-init`, `idb-crypt`); minimum Java version is 25 (LTS); exact packaging **to be defined**.
 
-Engine-specific behavior should be isolated behind adapters where required. There is no requirement for database-resident InitiumDb code or objects.
+Engine-specific behavior is isolated in a thin per-engine profile (DBUnit data type factory and properties, session schema). There is no requirement for database-resident InitiumDb code or objects.
 
 ## Errors, repeatability and observability
 
@@ -279,17 +290,17 @@ The following items should be settled before considering this README an implemen
 
 1. Transaction boundaries for each database step and each optional SQL hook.
 2. Precise DBUnit table-order handling and metadata requirements for Oracle/PostgreSQL.
-3. Exact environment configuration discovery and CLI option names.
-4. Secret-provider contract and integration with TeamCity/BYD.
+3. Whether the configuration directory needs a discovery mechanism beyond `--config-dir` and `~/.initiumdb`.
+4. Secret-provider contract and integration with CI/CD and proprietary CD mechanisms.
 5. Handling of case-specific cleanup, sequence values, triggers and generated identifiers.
 6. Portability rules for datasets captured in one environment and applied to another.
 7. Packaging, installation and release process.
 
 ## License and governance
 
-The intended governance model draws on the established LimitsDb project: an open-source core, public issue tracking and contributions, documented releases, and maintenance by **Inversiones Etimo SpA**. **Apache License 2.0 is proposed but not yet finalized for InitiumDb.**
+The intended governance model is an open-source core, public issue tracking and contributions, documented releases, and maintenance by **Inversiones Etimo SpA**. **Apache License 2.0 is proposed but not yet finalized for InitiumDb.**
 
-Any future proprietary extensions (such as an internal BYD integration) should remain separate from the open-source core. Ownership, trademark and commercial-edition statements must be reviewed for consistency with the selected open-source license before publication.
+Any future proprietary extensions (such as an integration with an internal CD mechanism) should remain separate from the open-source core. Ownership, trademark and commercial-edition statements must be reviewed for consistency with the selected open-source license before publication.
 
 ## Project intent
 

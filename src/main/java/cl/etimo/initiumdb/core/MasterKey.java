@@ -35,8 +35,17 @@ public final class MasterKey {
     return homeDir.resolve(".initiumdb").resolve("idb.key");
   }
 
+  /** Returns the existing master key; fails instead of creating one when none exists. */
+  public static byte[] load(Map<String, String> env, Path homeDir) {
+    return resolve(env, homeDir, false);
+  }
+
   /** Returns the master key, creating the key file when neither the variable nor the file exist. */
   public static byte[] loadOrCreate(Map<String, String> env, Path homeDir) {
+    return resolve(env, homeDir, true);
+  }
+
+  private static byte[] resolve(Map<String, String> env, Path homeDir, boolean create) {
     String fromEnv = env.get(ENV_VAR);
     if (fromEnv != null && !fromEnv.isEmpty()) {
       return parseEnvValue(fromEnv);
@@ -45,6 +54,10 @@ public final class MasterKey {
     try {
       if (Files.exists(path)) {
         return readKeyFile(path);
+      }
+      if (!create) {
+        throw new InitiumDbException(
+            "No master key: set " + ENV_VAR + " or create " + path + " (idb-init creates it).");
       }
       return createKeyFile(path);
     } catch (IOException e) {

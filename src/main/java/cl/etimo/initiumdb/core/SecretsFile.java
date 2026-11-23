@@ -12,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Supplier;
 
 /**
  * Local secrets file: a JSON object mapping each {@code credential} name of the environment file to
@@ -50,6 +51,34 @@ public final class SecretsFile {
       write(file, root);
     }
     return updated;
+  }
+
+  /**
+   * Returns the password stored under {@code credential}. Encrypted values are decrypted with the
+   * key from {@code key} (requested only when needed); an empty value is an empty password;
+   * cleartext values are rejected so they are never used silently.
+   */
+  public static String resolve(Path file, String credential, Supplier<byte[]> key) {
+    if (!Files.isRegularFile(file)) {
+      throw new InitiumDbException(
+          "Secrets file not found: " + file + " (needed for credential '" + credential + "').");
+    }
+    JsonNode value = read(file).get(credential);
+    if (value == null) {
+      throw new InitiumDbException("Credential '" + credential + "' not found in " + file + ".");
+    }
+    if (!value.isTextual()) {
+      throw new InitiumDbException("Secret '" + credential + "' in " + file + " must be a string.");
+    }
+    String text = value.asText();
+    if (text.isEmpty()) {
+      return text;
+    }
+    if (!SecretCipher.isEncrypted(text)) {
+      throw new InitiumDbException(
+          "Credential '" + credential + "' in " + file + " is cleartext: run idb-crypt first.");
+    }
+    return SecretCipher.decrypt(text, key.get());
   }
 
   private static ObjectNode read(Path file) {
