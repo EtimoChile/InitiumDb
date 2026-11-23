@@ -1,0 +1,3 @@
+-- Optional cleanup run by idb-prepare before the REFRESH. REFRESH never deletes rows.
+DELETE FROM ACCOUNT WHERE CUSTOMER_ID IN (1001, 1002);
+DELETE FROM CUSTOMER WHERE CUSTOMER_ID IN (1001, 1002);

@@ -89,6 +89,8 @@ repo-app/
               dataset.xml
 ```
 
+Ready-to-copy examples for Oracle and PostgreSQL live in [`examples/`](examples): each has a `schema.sql` (disposable dev database only), a `config/dev.yml` environment, a `config/secrets.example.json` and a `testdata/regression` case. Copy `secrets.example.json` to `dev.secrets.json`, set the password and run `idb-crypt --environment dev --config-dir examples/<engine>/config`.
+
 The location is illustrative: InitiumDb does not require a particular Playwright or application directory layout. Paths in `case.yml` are resolved relative to the case file.
 
 ## Case configuration
@@ -128,12 +130,12 @@ Example `db/CRM/queries.yml`:
 ```yaml
 schema: CRM_OWNER
 tables:
-  - name: CLIENTE
+  - name: CUSTOMER
     sql: |
-      SELECT * FROM CLIENTE WHERE ID_CLIENTE IN (1001, 1002)
-  - name: CUENTA
+      SELECT * FROM CUSTOMER WHERE CUSTOMER_ID IN (1001, 1002)
+  - name: ACCOUNT
     sql: |
-      SELECT * FROM CUENTA WHERE ID_CLIENTE IN (1001, 1002)
+      SELECT * FROM ACCOUNT WHERE CUSTOMER_ID IN (1001, 1002)
 ```
 
 The order of `tables` is significant. Query results must be serialized into a dataset preserving the configured table order. For deterministic data files, queries should specify an `ORDER BY` where row order matters. Queries are supplied by trusted project maintainers; they are not a general-purpose untrusted SQL input interface.
@@ -144,8 +146,8 @@ Example `db/CRM/dataset.xml`:
 
 ```xml
 <dataset>
-  <CLIENTE ID_CLIENTE="1001" NOMBRE="Cliente Demo" ESTADO="ACTIVO"/>
-  <CUENTA ID_CUENTA="2001" ID_CLIENTE="1001" SALDO="50000"/>
+  <CUSTOMER CUSTOMER_ID="1001" NAME="Demo Customer" STATUS="ACTIVE"/>
+  <ACCOUNT ACCOUNT_ID="2001" CUSTOMER_ID="1001" BALANCE="50000"/>
 </dataset>
 ```
 

@@ -1,0 +1,11 @@
+# Example case: WHAT to capture and prepare, not where the database lives.
+# Paths are relative to this file. The alias CRM is resolved by config/dev.yml.
+version: 1
+name: regression
+
+databases:
+  - alias: CRM
+    queries: db/CRM/queries.yml
+    dataset: db/CRM/dataset.xml
+    preSql: db/CRM/pre.sql
+    # postSql is optional and omitted here.
