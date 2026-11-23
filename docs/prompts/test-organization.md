@@ -19,4 +19,5 @@ Contract-to-class map (extend as contracts are defined):
 
 | Contract | Class |
 |---|---|
-| (none yet) | |
+| README > Initialization (`idb-init`) | `ProjectInitializationTest` |
+| README > Local secrets (`idb-crypt`) | `SecretEncryptionTest` |

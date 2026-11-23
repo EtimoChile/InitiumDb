@@ -15,12 +15,18 @@
   <properties>
     <maven.compiler.release>25</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <jackson.version>2.18.2</jackson.version>
     <junit.version>5.11.4</junit.version>
     <assertj.version>3.27.3</assertj.version>
     <mockito.version>5.14.2</mockito.version>
   </properties>
 
   <dependencies>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>${jackson.version}</version>
+    </dependency>
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
@@ -72,7 +78,7 @@
         <configuration>
           <java>
             <googleJavaFormat>
-              <version>1.25.2</version>
+              <version>1.28.0</version>
             </googleJavaFormat>
             <removeUnusedImports/>
           </java>

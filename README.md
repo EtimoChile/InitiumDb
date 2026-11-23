@@ -22,7 +22,7 @@ InitiumDb is intended **only for development and QA databases, never production*
 ## Scope and design principles
 
 1. **Non-production use only.** Intended targets are development and QA databases. Access controls and independently verified connection settings should prevent accidental production access; a YAML environment label alone is not a security boundary.
-2. **Two executables only.** `idb-capture` and `idb-prepare`. There is no `validate`, `replay`, or `--mode` interface.
+2. **Four executables only.** `idb-capture` and `idb-prepare` operate on data; `idb-init` and `idb-crypt` set up configuration and local secrets (same usage as LimitsDb's `ldb-init` and `ldb-crypt`). There is no `validate`, `replay`, or `--mode` interface.
 3. **Sequential execution.** No parallelism or dependency graph. The author of the case controls the order of database steps, queries and dataset tables.
 4. **No database installation.** No InitiumDb tables, locks, users, roles, grants, sequences or other objects are created.
 5. **No automatic recovery.** No persisted execution state or resume-from-checkpoint logic.
@@ -35,9 +35,11 @@ InitiumDb is intended **only for development and QA databases, never production*
 ```bash
 idb-capture --case path/to/testdata/case.yml --environment dev
 idb-prepare --case path/to/testdata/case.yml --environment qa
+idb-init --case path/to/testdata/case.yml --environment dev
+idb-crypt --environment dev
 ```
 
-Both executables may run manually. `idb-capture` is **not** part of CI/CD. `idb-prepare` is normally invoked by CI/CD before tests, but can also be invoked manually.
+`idb-init` and `idb-crypt` are described under [Initialization](#initialization) and [Local secrets](#local-secrets). `idb-capture` and `idb-prepare` may run manually. `idb-capture` is **not** part of CI/CD. `idb-prepare` is normally invoked by CI/CD before tests, but can also be invoked manually.
 
 The `--environment` argument identifies an external environment configuration. An explicit configuration path option may be provided by the implementation; its exact CLI spelling is **to be defined**.
 
@@ -194,6 +196,26 @@ public interface ConnectionResolver {
 
 A generic JDBC resolver may obtain credentials from environment variables or an external secret provider. A corporate resolver may integrate with **BYD** without coupling the open-source core to BYD. The exact credential-provider interface, provider selection, local secret-file format (if any), and TeamCity-to-BYD access mechanism are **to be defined**.
 
+### Initialization
+
+```bash
+idb-init --case path/to/testdata/case.yml --environment dev [--config-dir dir] [--overwrite]
+```
+
+Creates, relative to the case file, `case.yml` and `db/CRM/queries.yml` templates, and in the configuration directory `<environment>.yml` and an empty `<environment>.secrets.json` (`{"crm": ""}`). It also creates the master key if it does not exist (see below). Existing files are skipped unless `--overwrite` is given; the secrets file is **never** overwritten. Templates contain no credentials.
+
+The configuration directory defaults to `~/.initiumdb`. The environment name accepts letters, digits, `_` and `-`.
+
+### Local secrets
+
+```bash
+idb-crypt --environment dev [--case path/to/case.yml] [--config-dir dir]
+```
+
+`<config-dir>/<environment>.secrets.json` maps each `credential` name of the environment file to its password. `idb-crypt` encrypts every non-empty cleartext value in place with AES-256-GCM (`enc:v1:aes256gcm:<nonce>:<ciphertext>`); already encrypted and empty values are left untouched, so it is idempotent. A missing, malformed or non-string-valued secrets file fails with exit code `1`. `--case` is accepted so an `idb-prepare` command line can be reused, but it is not read.
+
+Master key: the `IDB_MASTER_KEY` environment variable (hex of 64 chars, base64 of 32 bytes, or a raw 32-byte value); otherwise `~/.initiumdb/idb.key`, created with owner-only permissions where the file system supports POSIX permissions. This is protection of secrets at rest on one machine, not a vault: anyone holding the key can decrypt. Neither command prints decrypted secrets, and error messages never echo secrets or key material. How CI/CD supplies the key or integrates a corporate provider (BYD) remains **to be defined**.
+
 A plain environment label such as `environment: qa` cannot establish that the JDBC endpoint is truly non-production. Deployments should use restricted database accounts and enforce environment boundaries outside InitiumDb as well.
 
 ## Integration with CI/CD and Playwright
@@ -225,7 +247,7 @@ If `idb-prepare` exits with a nonzero status, the pipeline should fail that step
 - **Dataset format:** DBUnit Flat XML.
 - **Configuration format:** YAML.
 - **Initial target engines:** Oracle and PostgreSQL.
-- **Distribution:** two Java CLI executables (`idb-capture` and `idb-prepare`); minimum Java version is 25 (LTS); exact packaging **to be defined**.
+- **Distribution:** four Java CLI executables (`idb-capture`, `idb-prepare`, `idb-init`, `idb-crypt`); minimum Java version is 25 (LTS); exact packaging **to be defined**.
 
 Engine-specific behavior should be isolated behind adapters where required. There is no requirement for database-resident InitiumDb code or objects.
 
