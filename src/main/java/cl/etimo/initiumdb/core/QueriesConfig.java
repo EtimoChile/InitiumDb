@@ -1,5 +1,6 @@
 package cl.etimo.initiumdb.core;
 
+import cl.etimo.initiumdb.db.SqlIdentifiers;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.file.Path;
@@ -24,10 +25,10 @@ public record QueriesConfig(String schema, List<TableQuery> tables) {
       if (!(table instanceof ObjectNode)) {
         throw new InitiumDbException("Every entry of 'tables' in " + file + " must be a mapping.");
       }
+      String name = YamlFiles.requiredText(table, "name", file);
+      String sql = YamlFiles.optionalText(table, "sql", file);
       queries.add(
-          new TableQuery(
-              YamlFiles.requiredText(table, "name", file),
-              YamlFiles.requiredText(table, "sql", file)));
+          new TableQuery(name, sql != null ? sql : "SELECT * FROM " + SqlIdentifiers.quote(name)));
     }
     return new QueriesConfig(schema, List.copyOf(queries));
   }

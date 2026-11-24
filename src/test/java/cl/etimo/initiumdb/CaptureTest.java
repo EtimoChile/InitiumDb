@@ -54,6 +54,18 @@ class CaptureTest {
   }
 
   @Test
+  void aTableWithoutSqlIsCapturedWholeAndKeepsTheConfiguredName() {
+    // Spec: README.md > Capture queries (sql optional, defaults to SELECT * FROM "<name>")
+    // Given
+    fx.write("CRM.queries.yml", "tables:\n  - name: CUSTOMER\n  - name: ACCOUNT\n");
+    // When
+    CliRun run = fx.capture();
+    // Then
+    assertThat(run.exitCode()).as(run.err()).isZero();
+    assertThat(fx.read("CRM.dataset.xml")).contains("Not Selected").contains("ACCOUNT_ID=\"2001\"");
+  }
+
+  @Test
   void captureOfAnEmptyResultStillSucceeds() {
     // Spec: README.md > idb-capture
     // Given

@@ -164,7 +164,10 @@ tables:
   - name: ACCOUNT
     sql: |
       SELECT * FROM ACCOUNT WHERE CUSTOMER_ID IN (1001, 1002)
+  - name: PRODUCT
 ```
+
+`sql` is optional: without it the table is captured whole, as `SELECT * FROM "<name>"` (the name is double-quoted, so it is matched exactly as written, per the identifier rules below). Give `sql` to filter rows or order them.
 
 The order of `tables` is significant. Query results must be serialized into a dataset preserving the configured table order. For deterministic data files, queries should specify an `ORDER BY` where row order matters. Queries are supplied by trusted project maintainers; they are not a general-purpose untrusted SQL input interface.
 
@@ -173,7 +176,7 @@ The order of `tables` is significant. Query results must be serialized into a da
 Two kinds of values follow two different rules:
 
 - **Fields that name database objects** (`schema`, `tables[].name`) are written **exactly as in the data dictionary**, with the same case. InitiumDb never folds their case. When it must put one into a statement of its own (such as the session schema), it double-quotes it so the engine takes it literally. For example, `schema: CRM_OWNER` is right for an Oracle schema created unquoted, and `schema: crm_owner` for a PostgreSQL one. Table names may have mixed case (`Customer`) and are matched exactly.
-- **SQL and SQL fragments** (`sql` in `queries.yml`, hook `.sql` scripts) are sent to the engine unchanged, so the engine's own rules for case and quoting apply: unquoted identifiers fold (upper case in Oracle, lower case in PostgreSQL) and names with mixed case or special characters need double quotes.
+- **SQL and SQL fragments** (`sql` in `queries.yml` when given, hook `.sql` scripts) are sent to the engine unchanged, so the engine's own rules for case and quoting apply: unquoted identifiers fold (upper case in Oracle, lower case in PostgreSQL) and names with mixed case or special characters need double quotes.
 
 When applying a dataset, DBUnit resolves table and column names against the database metadata and generates quoted SQL, so names with mixed case or special characters are handled. Table and column names become element and attribute names in the Flat XML dataset, so they must be valid XML names (no spaces). `idb-capture` fails with a message naming the table or column, and leaves any existing dataset untouched.
 
