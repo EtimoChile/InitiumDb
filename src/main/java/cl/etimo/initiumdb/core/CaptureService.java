@@ -12,17 +12,24 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import org.dbunit.DatabaseUnitException;
 import org.dbunit.database.IDatabaseConnection;
-import org.dbunit.database.QueryDataSet;
-import org.dbunit.dataset.xml.FlatXmlDataSet;
+import org.dbunit.database.ResultSetTableMetaData;
+import org.dbunit.dataset.Column;
+import org.dbunit.dataset.DataSetException;
+import org.dbunit.dataset.ITableMetaData;
+import org.dbunit.dataset.xml.FlatXmlWriter;
 
 /**
  * Implements {@code idb-capture}: runs the configured {@code SELECT}s in declared order and writes
  * a DBUnit Flat XML dataset per step. Data is not masked or anonymized.
  */
 public final class CaptureService {
+
+  private static final int FETCH_SIZE = 1000;
 
   private CaptureService() {}
 
@@ -37,7 +44,7 @@ public final class CaptureService {
       index++;
       String label = "Step " + index + " (" + step.alias() + ")";
       try {
-        int tables = captureStep(step, environment, resolver);
+        int tables = captureStep(step, environment, resolver, out);
         out.println(label + ": captured " + tables + " table(s) into " + step.dataset());
       } catch (InitiumDbException e) {
         throw new InitiumDbException(label + ": " + e.getMessage());
@@ -48,7 +55,10 @@ public final class CaptureService {
   }
 
   private static int captureStep(
-      DatabaseStep step, EnvironmentConfig environment, ConnectionResolver resolver)
+      DatabaseStep step,
+      EnvironmentConfig environment,
+      ConnectionResolver resolver,
+      PrintStream out)
       throws SQLException, DatabaseUnitException, IOException {
     if (!Files.isRegularFile(step.queries())) {
       throw new InitiumDbException("Queries file not found: " + step.queries());
@@ -61,12 +71,7 @@ public final class CaptureService {
       connection.setReadOnly(true);
       engine.useSchema(connection, queries.schema());
       IDatabaseConnection dbunit = DbUnitSession.open(connection, engine, queries.schema());
-      QueryDataSet dataSet = new QueryDataSet(dbunit);
-      for (TableQuery table : queries.tables()) {
-        dataSet.addTable(table.name(), table.sql());
-      }
-      requireXmlNames(dataSet);
-      write(dataSet, step.dataset());
+      write(connection, dbunit, queries, step.dataset(), out);
       connection.rollback();
     }
     return queries.tables().size();
@@ -74,27 +79,27 @@ public final class CaptureService {
 
   /**
    * Flat XML uses table names as element names and column names as attribute names, so both must be
-   * valid XML names. Failing here avoids writing a dataset that {@code idb-prepare} cannot read.
+   * valid XML names. Failing before the table is written avoids a dataset that {@code idb-prepare}
+   * cannot read.
    */
-  private static void requireXmlNames(QueryDataSet dataSet) throws DatabaseUnitException {
-    for (String table : dataSet.getTableNames()) {
-      if (!isXmlName(table)) {
+  private static void requireXmlNames(ITableMetaData meta) throws DataSetException {
+    String table = meta.getTableName();
+    if (!isXmlName(table)) {
+      throw new InitiumDbException(
+          "Table name '"
+              + table
+              + "' is not a valid XML name (Flat XML datasets cannot hold spaces or most"
+              + " symbols); rename the object.");
+    }
+    for (Column column : meta.getColumns()) {
+      if (!isXmlName(column.getColumnName())) {
         throw new InitiumDbException(
-            "Table name '"
+            "Column '"
+                + column.getColumnName()
+                + "' of table '"
                 + table
                 + "' is not a valid XML name (Flat XML datasets cannot hold spaces or most"
                 + " symbols); rename the object.");
-      }
-      for (var column : dataSet.getTableMetaData(table).getColumns()) {
-        if (!isXmlName(column.getColumnName())) {
-          throw new InitiumDbException(
-              "Column '"
-                  + column.getColumnName()
-                  + "' of table '"
-                  + table
-                  + "' is not a valid XML name (Flat XML datasets cannot hold spaces or most"
-                  + " symbols); rename the object.");
-        }
       }
     }
   }
@@ -114,19 +119,59 @@ public final class CaptureService {
     return true;
   }
 
-  /** Writes to a temporary file first so a failed capture never clobbers a good dataset. */
-  private static void write(QueryDataSet dataSet, Path target)
-      throws DatabaseUnitException, IOException {
+  /**
+   * Streams every query straight into a temporary file (rows are never held in memory, and nothing
+   * extra is run to count them), then moves it over the target, so a failed capture never clobbers
+   * a good dataset.
+   */
+  private static void write(
+      Connection connection,
+      IDatabaseConnection dbunit,
+      QueriesConfig queries,
+      Path target,
+      PrintStream out)
+      throws SQLException, DatabaseUnitException, IOException {
     Path absolute = target.toAbsolutePath();
     Files.createDirectories(absolute.getParent());
     Path temp = Files.createTempFile(absolute.getParent(), ".idb-capture-", ".tmp");
     try {
       try (OutputStream stream = Files.newOutputStream(temp)) {
-        FlatXmlDataSet.write(dataSet, stream);
+        FlatXmlWriter writer = new FlatXmlWriter(stream);
+        writer.startDataSet();
+        for (TableQuery table : queries.tables()) {
+          long rows = writeTable(connection, dbunit, table, writer);
+          out.println("  " + table.name() + ": " + rows + " row(s)");
+        }
+        writer.endDataSet();
       }
       Files.move(temp, absolute, StandardCopyOption.REPLACE_EXISTING);
     } finally {
       Files.deleteIfExists(temp);
+    }
+  }
+
+  private static long writeTable(
+      Connection connection, IDatabaseConnection dbunit, TableQuery table, FlatXmlWriter writer)
+      throws SQLException, DatabaseUnitException {
+    try (Statement statement = connection.createStatement()) {
+      statement.setFetchSize(FETCH_SIZE);
+      try (ResultSet rs = statement.executeQuery(table.sql())) {
+        ITableMetaData meta = new ResultSetTableMetaData(table.name(), rs, dbunit, true);
+        requireXmlNames(meta);
+        Column[] columns = meta.getColumns();
+        writer.startTable(meta);
+        long rows = 0;
+        while (rs.next()) {
+          Object[] values = new Object[columns.length];
+          for (int i = 0; i < columns.length; i++) {
+            values[i] = columns[i].getDataType().getSqlValue(i + 1, rs);
+          }
+          writer.row(values);
+          rows++;
+        }
+        writer.endTable();
+        return rows;
+      }
     }
   }
 

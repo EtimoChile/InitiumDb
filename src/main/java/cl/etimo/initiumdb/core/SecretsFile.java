@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
@@ -58,10 +59,16 @@ public final class SecretsFile {
 
   /**
    * Returns the password stored under {@code credential}. Encrypted values are decrypted with the
-   * key from {@code key} (requested only when needed); an empty value is an empty password;
-   * cleartext values are rejected so they are never used silently.
+   * key from {@code key} (requested only when needed); an empty value is an empty password. A
+   * cleartext value is used as is and the whole file is encrypted in place first, with the key from
+   * {@code newKey} (which may create it); {@code notice} then receives a message naming the file.
    */
-  public static String resolve(Path file, String credential, Supplier<byte[]> key) {
+  public static String resolve(
+      Path file,
+      String credential,
+      Supplier<byte[]> key,
+      Supplier<byte[]> newKey,
+      Consumer<String> notice) {
     if (!Files.isRegularFile(file)) {
       throw new InitiumDbException(
           "Secrets file not found: " + file + " (needed for credential '" + credential + "').");
@@ -78,8 +85,9 @@ public final class SecretsFile {
       return text;
     }
     if (!SecretCipher.isEncrypted(text)) {
-      throw new InitiumDbException(
-          "Credential '" + credential + "' in " + file + " is cleartext: run idb-crypt first.");
+      encryptInPlace(file, newKey.get());
+      notice.accept("Cleartext secrets encrypted in " + file);
+      return text;
     }
     return SecretCipher.decrypt(text, key.get());
   }

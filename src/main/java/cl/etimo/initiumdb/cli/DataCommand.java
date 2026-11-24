@@ -59,7 +59,11 @@ final class DataCommand {
           new JdbcConnectionResolver(
               environment,
               new DefaultCredentialProvider(
-                  env, layout.secretsFile(), () -> MasterKey.load(env, homeDir)));
+                  env,
+                  layout.secretsFile(),
+                  () -> MasterKey.load(env, homeDir),
+                  () -> MasterKey.loadOrCreate(env, homeDir),
+                  message -> err.println(name + ": " + message)));
       action.run(caseConfig, environment, resolver, out);
       return 0;
     } catch (InitiumDbException e) {

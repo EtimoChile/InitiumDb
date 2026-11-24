@@ -69,6 +69,8 @@ Every command accepts `--help` (or `-h`), which prints its usage to standard out
 
 `idb-capture` does not construct the test scenario: the developer has already prepared the desired data. Captured datasets must be reviewed before committing them to Git; **InitiumDb does not automatically anonymize or mask data**.
 
+Rows are streamed from the database straight into a temporary file (`.idb-capture-*.tmp`, next to the dataset) and never held in memory; no extra query is run to count them. Each table is reported with its row count when it finishes. The temporary file replaces the dataset only when every table succeeded, so a failed or interrupted capture keeps the previous dataset.
+
 ### `idb-prepare`
 
 1. Read the case definition and the selected environment configuration.
@@ -266,7 +268,7 @@ The configuration directory defaults to `~/.initiumdb`. The environment name acc
 idb-crypt --environment dev [--case path/to/testdata/regression] [--config-dir dir]
 ```
 
-`<config-dir>/<environment>.secrets.json` maps each credential name (the `credential` of the environment file, by default the alias) to its password. `idb-crypt` encrypts every non-empty cleartext value in place with AES-256-GCM (`enc:v1:aes256gcm:<nonce>:<ciphertext>`); already encrypted and empty values are left untouched, so it is idempotent. A missing, malformed or non-string-valued secrets file fails with exit code `1`. `--case` is accepted so an `idb-prepare` command line can be reused, but it is not read.
+`<config-dir>/<environment>.secrets.json` maps each credential name (the `credential` of the environment file, by default the alias) to its password. `idb-crypt` encrypts every non-empty cleartext value in place with AES-256-GCM (`enc:v1:aes256gcm:<nonce>:<ciphertext>`); already encrypted and empty values are left untouched, so it is idempotent. `idb-capture` and `idb-prepare` do the same on the fly: when the secrets file is the source of a password and holds cleartext values, they encrypt the whole file in place (creating the master key if none exists), report it on stderr without printing any secret, and carry on with the password; a password given by `IDB_CREDENTIAL_<NAME>` never touches the file. A missing, malformed or non-string-valued secrets file fails with exit code `1`. `--case` is accepted so an `idb-prepare` command line can be reused, but it is not read.
 
 Master key: the `IDB_MASTER_KEY` environment variable (hex of 64 chars, base64 of 32 bytes, or a raw 32-byte value); otherwise `~/.initiumdb/idb.key`, created with owner-only permissions where the file system supports POSIX permissions. This is protection of secrets at rest on one machine, not a vault: anyone holding the key can decrypt. Neither command prints decrypted secrets, and error messages never echo secrets or key material. How CI/CD supplies the key or integrates a corporate provider (e.g. a proprietary CD mechanism) remains **to be defined**.
 

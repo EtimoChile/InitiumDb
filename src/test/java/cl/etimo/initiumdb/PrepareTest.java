@@ -340,16 +340,18 @@ class PrepareTest {
   }
 
   @Test
-  void prepareRejectsACleartextSecretsFileWithoutLeakingIt() {
-    // Spec: README.md > Local secrets
+  void prepareEncryptsCleartextSecretsOnTheFlyAndStillConnects() throws Exception {
+    // Spec: README.md > Local secrets (cleartext values are encrypted when a command finds them)
     // Given
-    fx.write("../cfg/dev.secrets.json", "{\"CRM\": \"p4ssw0rd-xyz\"}");
+    fx.write("../cfg/dev.secrets.json", "{\"CRM\": \"" + Fixture.PASSWORD + "\"}");
     // When
     CliRun run = CliRun.prepare(Map.of(), fx.home, fx.args());
     // Then
-    assertThat(run.exitCode()).isEqualTo(1);
-    assertThat(run.err()).contains("idb-crypt");
-    assertThat(run.out() + run.err()).doesNotContain("p4ssw0rd-xyz");
+    assertThat(run.exitCode()).as(run.err()).isZero();
+    assertThat(fx.read("../cfg/dev.secrets.json"))
+        .doesNotContain("\"" + Fixture.PASSWORD + "\"")
+        .contains("enc:v1:");
+    assertThat(run.err()).contains("encrypted");
   }
 
   @Test
