@@ -47,15 +47,17 @@ Unpack an archive anywhere and put `bin/` on the `PATH`. The launchers use `JAVA
 ## Commands
 
 ```bash
-idb-capture --case path/to/testdata/case.yml --environment dev [--config-dir dir]
-idb-prepare --case path/to/testdata/case.yml --environment qa [--config-dir dir]
-idb-init --case path/to/testdata/case.yml --environment dev --database CRM [--database postgresql:BILLING ...] [--engine oracle|postgresql] [--config-dir dir]
-idb-crypt --environment dev [--case path/to/case.yml] [--config-dir dir]
+idb-capture --case path/to/testdata/regression --environment dev [--config-dir dir]
+idb-prepare --case path/to/testdata/regression --environment qa [--config-dir dir]
+idb-init --case path/to/testdata/regression --environment dev --database CRM [--database postgresql:BILLING ...] [--engine oracle|postgresql] [--config-dir dir]
+idb-crypt --environment dev [--case path/to/testdata/regression] [--config-dir dir]
 ```
 
 `idb-init` and `idb-crypt` are described under [Initialization](#initialization) and [Local secrets](#local-secrets). `idb-capture` and `idb-prepare` may run manually. `idb-capture` is **not** part of CI/CD. `idb-prepare` is normally invoked by CI/CD before tests, but can also be invoked manually.
 
 The `--environment` argument selects `<environment>.yml` in the configuration directory, which is `~/.initiumdb` unless `--config-dir` is given.
+
+Every command accepts `--help` (or `-h`), which prints its usage to standard output and exits with code 0 without touching any file.
 
 ### `idb-capture`
 
@@ -72,14 +74,32 @@ The `--environment` argument selects `<environment>.yml` in the configuration di
 1. Read the case definition and the selected environment configuration.
 2. Resolve each logical database alias and its credentials.
 3. Process the configured database steps sequentially.
-4. For each step, run optional `preSql`, apply the dataset, then run optional `postSql`.
+4. For each step, run the optional hook `<ALIAS>.pre.sql`, apply the dataset, then run the optional hook `<ALIAS>.post.sql`.
 5. Exit successfully only if every step completes.
 
 The initial dataset operation is DBUnit **`REFRESH`**: update matching rows and insert missing rows according to DBUnit's key matching. `REFRESH` **does not delete unrelated or extra rows**, so `idb-prepare` does not promise to restore an entire database or table to an exact snapshot. Optional SQL hooks can perform case-specific cleanup when needed.
 
-SQL hooks (`preSql`, `postSql`) run in **autocommit**, exactly as written: each statement is committed as it runs, and a hook that contains its own `COMMIT`, `ROLLBACK` or DDL behaves as the engine defines. The dataset is applied in **one short transaction** (all or nothing), because DBUnit issues its statements row by row and autocommit would otherwise commit once per row. Nothing is rolled back across hooks, the dataset or steps: a failure stops the run, previously committed changes remain, and there is **no distributed transaction**. Re-running the entire `idb-prepare` command is the recovery strategy, so SQL hooks must be **idempotent**: for example `DELETE` then `INSERT`, `MERGE`, or `TRUNCATE`; avoid relative updates such as `balance = balance + 100` and statements that advance sequences.
+SQL hooks (`<ALIAS>.pre.sql`, `<ALIAS>.post.sql`) run in **autocommit**, exactly as written: each statement is committed as it runs, and a hook that contains its own `COMMIT`, `ROLLBACK` or DDL behaves as the engine defines. The dataset is applied in **one short transaction** (all or nothing), because DBUnit issues its statements row by row and autocommit would otherwise commit once per row. Nothing is rolled back across hooks, the dataset or steps: a failure stops the run, previously committed changes remain, and there is **no distributed transaction**. Re-running the entire `idb-prepare` command is the recovery strategy, so SQL hooks must be **idempotent**, or guarded so that a repeat does nothing (see [Conditional statements](#conditional-statements)): for example `DELETE` then `INSERT`, `MERGE`, or `TRUNCATE`; avoid relative updates such as `balance = balance + 100` and statements that advance sequences.
 
-**SQL hooks are plain SQL, by design.** A hook script is a sequence of SQL statements, each ending in `;`. InitiumDb does not run procedural blocks (PL/SQL, `DO $$ ... $$`): it is not a scripting runtime, and hooks stay declarative and comparable across engines. Repeatability comes from writing idempotent statements, not from procedural logic.
+**SQL hooks are plain SQL, by design.** A hook script is a sequence of SQL statements, each ending in `;`. InitiumDb does not run procedural blocks (PL/SQL, `DO $$ ... $$`): it is not a scripting runtime, and hooks stay declarative and comparable across engines. Repeatability comes from writing idempotent statements, not from procedural logic. Comments (`-- ...`, `/* ... */`, including optimizer hints such as `/*+ ... */`) are sent to the database exactly as written and never split a statement; a script made only of comments is valid and runs nothing. A hook file that is absent or empty runs nothing.
+
+### Conditional statements
+
+A statement that is not idempotent can be made safe to repeat with a guard: a line comment that starts with `idb:`, placed before the statement it controls.
+
+```sql
+-- idb:skip-if SELECT 1 FROM app.config WHERE k = 'seeded'
+INSERT INTO app.config (k, v) VALUES ('seeded', '1');
+
+-- idb:run-if SELECT 1 FROM app.customer WHERE customer_id = 1001
+UPDATE app.customer SET status = 'ACTIVE' WHERE customer_id = 1001;
+```
+
+- `-- idb:run-if <query>` runs the next statement only if the query returns at least one row; `-- idb:skip-if <query>` runs it only if the query returns none. The query is the rest of the line (a trailing `;` is optional) and is run in autocommit like any hook statement.
+- A directive applies to **one** statement, the next one. There is no nesting, `else` or procedural logic (see above). Statements without a directive always run.
+- The directive line is not sent to the database. Every other comment keeps no special meaning, including block comments, and the file remains valid SQL for other tools, which simply ignore the directive.
+- To keep a typo from silently running a statement that was meant to be conditional, a `-- idb:` comment must be a valid directive: an unknown name, a missing query, two directives for one statement, a directive after the statement has begun or a directive with no statement after it fail the run before any hook of that step runs.
+
 
 ## Example repository layout
 
@@ -92,7 +112,7 @@ repo-app/
           invoice.spec.ts
           credit-limit.spec.ts
       testdata/
-        regression/
+        regression/            # the directory is the case
           case.yml
           CRM.queries.yml
           CRM.dataset.xml
@@ -104,37 +124,32 @@ repo-app/
 
 Ready-to-copy examples for Oracle and PostgreSQL live in [`examples/`](examples): each has a `schema.sql` (disposable dev database only), a `config/dev.yml` environment, a `config/secrets.example.json` and a `testdata/regression` case. Copy `secrets.example.json` to `dev.secrets.json`, set the password and run `idb-crypt --environment dev --config-dir examples/<engine>/config`.
 
-The location is illustrative: InitiumDb does not require a particular Playwright or application directory layout. Paths in `case.yml` are resolved relative to the case file.
+The location is illustrative: InitiumDb does not require a particular Playwright or application directory layout. **The directory is the case**: `--case` names it, its name is the case name, and it holds a `case.yml` plus, for each database alias, files with fixed names (below).
 
 ## Case configuration
 
-`case.yml` describes **what** to capture and prepare, not **where** the databases are hosted or **how** to authenticate.
+`case.yml` (always this name, inside the case directory) lists **which** databases to process and in what order, not **where** they are hosted or **how** to authenticate. What to capture and prepare is in files whose names are fixed by convention.
 
 ```yaml
 version: 1
-name: regression
-
 databases:
   - alias: CRM
-    queries: CRM.queries.yml
-    dataset: CRM.dataset.xml
-    preSql: CRM.pre.sql
-    postSql: CRM.post.sql
-
   - alias: BILLING
-    queries: BILLING.queries.yml
-    dataset: BILLING.dataset.xml
 ```
 
 - `version`: configuration format version.
-- `name`: human-readable case/suite identifier.
-- `databases`: **ordered** list of steps. Multiple steps may reference the same logical database if necessary.
-- `alias`: logical database identifier, resolved by the environment configuration.
-- `queries`: ordered capture query definitions; used only by `idb-capture`.
-- `dataset`: Flat XML file written by `idb-capture` and consumed by `idb-prepare`.
-- `preSql` / `postSql`: optional SQL scripts executed only by `idb-prepare`, immediately before and after the dataset operation.
+- `databases`: **ordered** list of steps, each with the logical database `alias`, resolved by the environment configuration.
 
-The precise YAML schema, optional fields and error behavior for missing files will be finalized during implementation.
+For each alias the case directory holds:
+
+| File | Used by | Purpose |
+| --- | --- | --- |
+| `<ALIAS>.queries.yml` | `idb-capture` (and `idb-prepare` for the schema, when present) | ordered capture queries |
+| `<ALIAS>.dataset.xml` | both | Flat XML dataset written by `idb-capture` and applied by `idb-prepare` |
+| `<ALIAS>.pre.sql` | `idb-prepare` | optional hook run before the dataset; absent or empty runs nothing |
+| `<ALIAS>.post.sql` | `idb-prepare` | optional hook run after the dataset; absent or empty runs nothing |
+
+A missing queries file fails `idb-capture`; a missing dataset file fails `idb-prepare`. Two cases never share files: each lives in its own directory.
 
 ### Capture queries
 
@@ -158,7 +173,7 @@ The order of `tables` is significant. Query results must be serialized into a da
 Two kinds of values follow two different rules:
 
 - **Fields that name database objects** (`schema`, `tables[].name`) are written **exactly as in the data dictionary**, with the same case. InitiumDb never folds their case. When it must put one into a statement of its own (such as the session schema), it double-quotes it so the engine takes it literally. For example, `schema: CRM_OWNER` is right for an Oracle schema created unquoted, and `schema: crm_owner` for a PostgreSQL one. Table names may have mixed case (`Customer`) and are matched exactly.
-- **SQL and SQL fragments** (`sql` in `queries.yml`, `preSql` / `postSql` scripts) are sent to the engine unchanged, so the engine's own rules for case and quoting apply: unquoted identifiers fold (upper case in Oracle, lower case in PostgreSQL) and names with mixed case or special characters need double quotes.
+- **SQL and SQL fragments** (`sql` in `queries.yml`, hook `.sql` scripts) are sent to the engine unchanged, so the engine's own rules for case and quoting apply: unquoted identifiers fold (upper case in Oracle, lower case in PostgreSQL) and names with mixed case or special characters need double quotes.
 
 When applying a dataset, DBUnit resolves table and column names against the database metadata and generates quoted SQL, so names with mixed case or special characters are handled. Table and column names become element and attribute names in the Flat XML dataset, so they must be valid XML names (no spaces). `idb-capture` fails with a message naming the table or column, and leaves any existing dataset untouched.
 
@@ -209,7 +224,7 @@ A corresponding `qa.yml` would define the same logical aliases with QA endpoints
 
 ```bash
 IDB_CRM_ENGINE=postgresql IDB_CRM_URL=jdbc:postgresql://dev-crm:5432/crm IDB_CRM_USER=tdm_user \
-IDB_CREDENTIAL_CRM=... idb-prepare --case testdata/regression/case.yml --environment dev
+IDB_CREDENTIAL_CRM=... idb-prepare --case testdata/regression --environment dev
 ```
 
 
@@ -235,17 +250,17 @@ The built-in resolver reads each password from the `IDB_CREDENTIAL_<NAME>` envir
 ### Initialization
 
 ```bash
-idb-init --case path/to/testdata/case.yml --environment dev --database CRM [--database postgresql:BILLING ...] [--engine oracle|postgresql] [--config-dir dir]
+idb-init --case path/to/testdata/regression --environment dev --database CRM [--database postgresql:BILLING ...] [--engine oracle|postgresql] [--config-dir dir]
 ```
 
-Initialization is **cumulative and never overwrites**. `--database [ENGINE:]NAME` is repeatable (at least one). `NAME` is converted to upper case and may use letters, digits and `_`; `ENGINE` is `oracle` or `postgresql` (case-insensitive) and defaults to `--engine` (default `oracle`). For each database it ensures, relative to the case file, a step in `case.yml` (declaring `queries`, `dataset`, `preSql` and `postSql`), a `<NAME>.queries.yml` template and empty `<NAME>.pre.sql` and `<NAME>.post.sql` hook files (`idb-prepare` accepts empty hooks), and in the configuration directory an entry in `<environment>.yml` (engine and a JDBC URL placeholder for that engine) and an empty entry in `<environment>.secrets.json` (for example `{"CRM": ""}`). Files that do not exist are created; files that exist only receive the databases they do not contain yet, appended at the end of `databases:`; an existing database entry, query file or secret is never modified. If an existing file cannot be extended (for example `databases:` is not its last entry, or the environment file declares another environment) nothing is written and the message names the databases to add by hand. The command reports each file as Created, Updated or Unchanged. It also creates the master key if it does not exist (see below). Templates contain no credentials.
+Initialization is **cumulative and never overwrites**. `--database [ENGINE:]NAME` is repeatable (at least one). `NAME` is converted to upper case and may use letters, digits and `_`; `ENGINE` is `oracle` or `postgresql` (case-insensitive) and defaults to `--engine` (default `oracle`). `--case` is the case directory. For each database it ensures a step `- alias: NAME` in `case.yml`, and, in the case directory, a `<NAME>.queries.yml` template and empty `<NAME>.pre.sql` and `<NAME>.post.sql` hook files (`idb-prepare` accepts empty hooks; the files are created when missing even if the database was already in the case), and in the configuration directory an entry in `<environment>.yml` (engine and a JDBC URL placeholder for that engine) and an empty entry in `<environment>.secrets.json` (for example `{"CRM": ""}`). Files that do not exist are created; files that exist only receive the databases they do not contain yet; an existing database entry, query file or secret is never modified. Case, environment and queries files are read and written with a YAML library and the secrets file with a JSON library, never as text: a rewritten YAML file keeps its content and key order but **not its comments or layout**. If an existing file cannot be read or extended (for example the environment file declares another environment, or `databases` in the case is not a list) nothing is written. The command reports each file as Created, Updated or Unchanged. It also creates the master key if it does not exist (see below). Templates contain no credentials.
 
 The configuration directory defaults to `~/.initiumdb`. The environment name accepts letters, digits, `_` and `-`.
 
 ### Local secrets
 
 ```bash
-idb-crypt --environment dev [--case path/to/case.yml] [--config-dir dir]
+idb-crypt --environment dev [--case path/to/testdata/regression] [--config-dir dir]
 ```
 
 `<config-dir>/<environment>.secrets.json` maps each credential name (the `credential` of the environment file, by default the alias) to its password. `idb-crypt` encrypts every non-empty cleartext value in place with AES-256-GCM (`enc:v1:aes256gcm:<nonce>:<ciphertext>`); already encrypted and empty values are left untouched, so it is idempotent. A missing, malformed or non-string-valued secrets file fails with exit code `1`. `--case` is accepted so an `idb-prepare` command line can be reused, but it is not read.

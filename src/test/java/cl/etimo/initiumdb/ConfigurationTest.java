@@ -16,14 +16,14 @@ class ConfigurationTest {
   @BeforeEach
   void setUp() {
     fx = new Fixture(tmp);
-    fx.write("db/CRM/dataset.xml", "<dataset/>");
+    fx.write("CRM.dataset.xml", "<dataset/>");
   }
 
   @Test
   void aCaseWithoutVersionIsRejected() {
     // Spec: README.md > Case configuration
     // Given
-    fx.writeCase("name: t\ndatabases:\n  - alias: CRM\n    dataset: db/CRM/dataset.xml\n");
+    fx.writeCase("name: t\ndatabases:\n  - alias: CRM\n");
     // When
     CliRun run = fx.prepare();
     // Then
@@ -35,7 +35,7 @@ class ConfigurationTest {
   void aCaseWithoutDatabaseStepsIsRejected() {
     // Spec: README.md > Case configuration
     // Given
-    fx.writeCase("version: 1\nname: t\ndatabases: []\n");
+    fx.writeCase("version: 1\ndatabases: []\n");
     // When
     CliRun run = fx.prepare();
     // Then
@@ -44,22 +44,10 @@ class ConfigurationTest {
   }
 
   @Test
-  void aStepWithoutDatasetIsRejected() {
-    // Spec: README.md > Case configuration
-    // Given
-    fx.writeCase("version: 1\nname: t\ndatabases:\n  - alias: CRM\n");
-    // When
-    CliRun run = fx.prepare();
-    // Then
-    assertThat(run.exitCode()).isEqualTo(1);
-    assertThat(run.err()).contains("dataset");
-  }
-
-  @Test
   void aMissingCaseFileIsRejected() throws Exception {
     // Spec: README.md > Case configuration
     // Given
-    java.nio.file.Files.delete(fx.casePath());
+    java.nio.file.Files.delete(fx.caseFile());
     // When
     CliRun run = fx.prepare();
     // Then
@@ -149,12 +137,10 @@ class ConfigurationTest {
     fx.writeEnvironment(
         "version: 1\nenvironment: dev\ndatabases:\n  CRM:\n    engine: postgresql\n"
             + "    jdbcUrl: x\n    username: u\n");
-    fx.writeCase(
-        "version: 1\nname: t\ndatabases:\n  - alias: crm\n    dataset: db/CRM/dataset.xml\n");
+    fx.writeCase("version: 1\ndatabases:\n  - alias: crm\n");
     assertThat(fx.capture().err()).contains("Invalid database alias 'crm'");
     // credential field
-    fx.writeCase(
-        "version: 1\nname: t\ndatabases:\n  - alias: CRM\n    dataset: db/CRM/dataset.xml\n");
+    fx.writeCase("version: 1\ndatabases:\n  - alias: CRM\n");
     fx.writeEnvironment(
         "version: 1\nenvironment: dev\ndatabases:\n  CRM:\n    engine: postgresql\n"
             + "    jdbcUrl: x\n    username: u\n    credential: crm\n");

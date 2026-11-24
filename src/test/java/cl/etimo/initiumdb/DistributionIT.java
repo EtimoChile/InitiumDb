@@ -82,7 +82,7 @@ class DistributionIT {
         launch(
             "idb-init",
             "--case",
-            tmp.resolve("project/case.yml").toString(),
+            tmp.resolve("project").toString(),
             "--environment",
             "dev",
             "--database",

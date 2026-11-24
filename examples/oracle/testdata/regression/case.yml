@@ -1,11 +1,7 @@
-# Example case: WHAT to capture and prepare, not where the database lives.
-# Paths are relative to this file. The alias CRM is resolved by config/dev.yml.
+# Example case. The directory is the case; this file only lists the databases to process, in
+# order. Every other file is found by convention next to it: <ALIAS>.queries.yml,
+# <ALIAS>.dataset.xml and the optional hooks <ALIAS>.pre.sql and <ALIAS>.post.sql.
+# The alias CRM is resolved to a real database by config/dev.yml.
 version: 1
-name: regression
-
 databases:
   - alias: CRM
-    queries: CRM.queries.yml
-    dataset: CRM.dataset.xml
-    preSql: CRM.pre.sql
-    # postSql is optional and omitted here.

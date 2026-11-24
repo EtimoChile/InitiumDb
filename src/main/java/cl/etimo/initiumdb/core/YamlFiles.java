@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import com.fasterxml.jackson.dataformat.yaml.YAMLGenerator;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -18,7 +19,24 @@ final class YamlFiles {
           new YAMLFactory()
               .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION));
 
+  private static final ObjectMapper WRITER =
+      new ObjectMapper(
+          YAMLFactory.builder()
+              .disable(YAMLGenerator.Feature.WRITE_DOC_START_MARKER)
+              .enable(YAMLGenerator.Feature.MINIMIZE_QUOTES)
+              .enable(YAMLGenerator.Feature.LITERAL_BLOCK_STYLE)
+              .build());
+
   private YamlFiles() {}
+
+  /** Serializes a mapping as YAML (the only way configuration files are written). */
+  static String write(ObjectNode node) {
+    try {
+      return WRITER.writeValueAsString(node);
+    } catch (JsonProcessingException e) {
+      throw new InitiumDbException("Unable to serialize YAML.");
+    }
+  }
 
   /** Reads a YAML mapping. Parser messages are not propagated (they may quote file content). */
   static ObjectNode readObject(Path file, String what) {
@@ -36,15 +54,6 @@ final class YamlFiles {
       throw new InitiumDbException("Unable to read " + what + " " + file + ".");
     }
     throw new InitiumDbException(what + " " + file + " must be a valid YAML mapping.");
-  }
-
-  /** Parses YAML text into a mapping, or returns {@code null} when it is not a valid mapping. */
-  static ObjectNode tryParse(String text) {
-    try {
-      return MAPPER.readTree(text) instanceof ObjectNode object ? object : null;
-    } catch (JsonProcessingException e) {
-      return null;
-    }
   }
 
   static void requireVersion(ObjectNode node, Path file) {

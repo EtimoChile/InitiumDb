@@ -9,7 +9,7 @@ import java.util.Map;
 public final class IdbCapture {
 
   static final String USAGE =
-      "Usage: idb-capture --case path/to/case.yml --environment dev [--config-dir dir]";
+      "Usage: idb-capture --case path/to/case-dir --environment dev [--config-dir dir]";
 
   private IdbCapture() {}
 

@@ -2,6 +2,8 @@ package cl.etimo.initiumdb.core;
 
 import cl.etimo.initiumdb.db.Engines;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -9,15 +11,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
 /**
- * Writes template configuration files; never contains credentials. Initialization is cumulative:
- * files that exist are kept and only the databases they do not yet contain are added. An existing
- * database entry is never modified.
+ * Writes template configuration files; never contains credentials. YAML and JSON files are read and
+ * written with the YAML and JSON libraries, never as text (so comments and layout of an existing
+ * YAML file are not preserved). Initialization is cumulative: files that exist are kept and only
+ * the databases they do not yet contain are added. An existing database entry is never modified.
  */
 public final class ProjectInitializer {
 
@@ -29,14 +31,7 @@ public final class ProjectInitializer {
 
   private record Change(Path file, String content, boolean existed) {}
 
-  private static final String QUERIES_TEMPLATE =
-      """
-      schema: SCHEMA_NAME
-      tables:
-        - name: TABLE_NAME
-          sql: |
-            SELECT * FROM TABLE_NAME ORDER BY ID
-      """;
+  private static final JsonNodeFactory NODES = JsonNodeFactory.instance;
 
   private ProjectInitializer() {}
 
@@ -67,29 +62,41 @@ public final class ProjectInitializer {
   }
 
   /**
-   * Creates what is missing and adds the databases that are not yet present to the case, the
-   * environment file and the secrets file; creates the {@code <ALIAS>.queries.yml} of each database
-   * next to the case when absent. Nothing is written when any existing file cannot be extended.
+   * Creates what is missing and adds the databases that are not yet present to {@code case.yml} (in
+   * the case directory), the environment file and the secrets file; creates, in the case directory,
+   * the {@code <ALIAS>.queries.yml} and the empty hook files of every given database when absent.
+   * Nothing is written when any existing file cannot be read or extended.
    */
-  public static Report init(Path caseFile, ConfigLayout layout, List<Database> databases) {
-    Path absoluteCase = caseFile.toAbsolutePath();
-    Path caseDir = absoluteCase.getParent();
+  public static Report init(Path caseDirectory, ConfigLayout layout, List<Database> databases) {
+    Path caseDir = caseDirectory.toAbsolutePath().normalize();
+    Path caseFile = caseDir.resolve(CaseConfig.FILE);
     List<Change> changes = new ArrayList<>();
     List<Path> unchanged = new ArrayList<>();
 
-    plan(absoluteCase, planCase(absoluteCase, databases), changes, unchanged);
+    plan(caseFile, planCase(caseFile, databases), changes, unchanged);
     for (Database db : databases) {
-      Path queries = caseDir.resolve(db.alias() + ".queries.yml");
-      plan(queries, Files.exists(queries) ? null : QUERIES_TEMPLATE, changes, unchanged);
+      Path queries = CaseConfig.file(caseDir, db.alias(), ".queries.yml");
+      plan(
+          queries,
+          Files.exists(queries) ? null : YamlFiles.write(queriesTemplate()),
+          changes,
+          unchanged);
       for (String hook : List.of(".pre.sql", ".post.sql")) {
-        Path file = caseDir.resolve(db.alias() + hook);
+        Path file = CaseConfig.file(caseDir, db.alias(), hook);
         plan(file, Files.exists(file) ? null : "", changes, unchanged);
       }
     }
     Path environmentFile = layout.environmentFile();
     plan(environmentFile, planEnvironment(environmentFile, layout, databases), changes, unchanged);
     Path secretsFile = layout.secretsFile();
-    plan(secretsFile, planSecrets(secretsFile, databases), changes, unchanged);
+    List<String> names = databases.stream().map(Database::alias).toList();
+    plan(
+        secretsFile,
+        Files.exists(secretsFile)
+            ? SecretsFile.withMissing(secretsFile, names)
+            : SecretsFile.create(secretsFile, names),
+        changes,
+        unchanged);
 
     List<Path> created = new ArrayList<>();
     List<Path> updated = new ArrayList<>();
@@ -109,178 +116,86 @@ public final class ProjectInitializer {
   }
 
   private static String planCase(Path file, List<Database> databases) {
-    if (!Files.exists(file)) {
-      return "version: 1\nname: my-case\n\ndatabases:\n" + caseSteps(databases);
+    ObjectNode root;
+    ArrayNode steps;
+    if (Files.exists(file)) {
+      root = YamlFiles.readObject(file, "Case file");
+      YamlFiles.requireVersion(root, file);
+      if (!(root.get("databases") instanceof ArrayNode existing)) {
+        throw new InitiumDbException("'databases' in " + file + " must be a list.");
+      }
+      steps = existing;
+    } else {
+      root = NODES.objectNode();
+      root.put("version", 1);
+      steps = root.putArray("databases");
     }
-    ObjectNode root = YamlFiles.readObject(file, "Case file");
-    YamlFiles.requireVersion(root, file);
     Set<String> present = new HashSet<>();
-    if (root.get("databases") != null) {
-      for (JsonNode step : root.get("databases")) {
-        JsonNode alias = step.get("alias");
-        if (alias != null && alias.isTextual()) {
-          present.add(alias.asText());
-        }
+    for (JsonNode step : steps) {
+      JsonNode alias = step.get("alias");
+      if (alias != null && alias.isTextual()) {
+        present.add(alias.asText());
       }
     }
-    return append(file, databases, present, caseSteps(missing(databases, present)), Case.INSTANCE);
+    boolean added = false;
+    for (Database db : databases) {
+      if (present.add(db.alias())) {
+        ObjectNode step = steps.addObject();
+        step.put("alias", db.alias());
+        added = true;
+      }
+    }
+    return added || !Files.exists(file) ? YamlFiles.write(root) : null;
   }
 
   private static String planEnvironment(Path file, ConfigLayout layout, List<Database> databases) {
-    if (!Files.exists(file)) {
-      return "version: 1\nenvironment: "
-          + layout.environment()
-          + "\n\ndatabases:\n"
-          + environmentEntries(databases);
-    }
-    ObjectNode root = YamlFiles.readObject(file, "Environment file");
-    YamlFiles.requireVersion(root, file);
-    String declared = YamlFiles.requiredText(root, "environment", file);
-    if (!declared.equals(layout.environment())) {
-      throw new InitiumDbException(
-          "Environment file "
-              + file
-              + " declares environment '"
-              + declared
-              + "', expected '"
-              + layout.environment()
-              + "'.");
-    }
-    Set<String> present = new HashSet<>();
-    YamlFiles.requiredObject(root, "databases", file).fieldNames().forEachRemaining(present::add);
-    return append(
-        file,
-        databases,
-        present,
-        environmentEntries(missing(databases, present)),
-        Environment.INSTANCE);
-  }
-
-  private static String planSecrets(Path file, List<Database> databases) {
-    List<String> names = databases.stream().map(Database::alias).toList();
+    ObjectNode root;
+    ObjectNode entries;
     if (Files.exists(file)) {
-      return SecretsFile.withMissing(file, names);
-    }
-    StringBuilder sb = new StringBuilder("{\n");
-    for (int i = 0; i < names.size(); i++) {
-      sb.append("  \"").append(names.get(i)).append("\": \"\"");
-      sb.append(i < names.size() - 1 ? ",\n" : "\n");
-    }
-    return sb.append("}\n").toString();
-  }
-
-  /** Strategy to read the aliases a YAML file declares, used to verify an appended result. */
-  private interface Layout {
-    Set<String> aliases(ObjectNode root);
-  }
-
-  private enum Case implements Layout {
-    INSTANCE;
-
-    @Override
-    public Set<String> aliases(ObjectNode root) {
-      Set<String> result = new LinkedHashSet<>();
-      if (root.get("databases") != null) {
-        for (JsonNode step : root.get("databases")) {
-          JsonNode alias = step.get("alias");
-          if (alias != null && alias.isTextual()) {
-            result.add(alias.asText());
-          }
-        }
+      root = YamlFiles.readObject(file, "Environment file");
+      YamlFiles.requireVersion(root, file);
+      String declared = YamlFiles.requiredText(root, "environment", file);
+      if (!declared.equals(layout.environment())) {
+        throw new InitiumDbException(
+            "Environment file "
+                + file
+                + " declares environment '"
+                + declared
+                + "', expected '"
+                + layout.environment()
+                + "'.");
       }
-      return result;
+      entries = YamlFiles.requiredObject(root, "databases", file);
+    } else {
+      root = NODES.objectNode();
+      root.put("version", 1);
+      root.put("environment", layout.environment());
+      entries = root.putObject("databases");
     }
-  }
-
-  private enum Environment implements Layout {
-    INSTANCE;
-
-    @Override
-    public Set<String> aliases(ObjectNode root) {
-      Set<String> result = new LinkedHashSet<>();
-      if (root.get("databases") != null) {
-        root.get("databases").fieldNames().forEachRemaining(result::add);
+    boolean added = false;
+    for (Database db : databases) {
+      if (!entries.has(db.alias())) {
+        ObjectNode entry = entries.putObject(db.alias());
+        entry.put("engine", db.engine());
+        entry.put(
+            "jdbcUrl",
+            "postgresql".equals(db.engine())
+                ? "jdbc:postgresql://HOST:5432/DATABASE"
+                : "jdbc:oracle:thin:@//HOST:1521/SERVICE");
+        entry.put("username", "USERNAME");
+        added = true;
       }
-      return result;
     }
+    return added || !Files.exists(file) ? YamlFiles.write(root) : null;
   }
 
-  /**
-   * Appends {@code addition} at the end of the file (where the {@code databases} entry must end)
-   * and verifies by parsing the result; returns {@code null} when there is nothing to add.
-   */
-  private static String append(
-      Path file, List<Database> wanted, Set<String> present, String addition, Layout layout) {
-    if (missing(wanted, present).isEmpty()) {
-      return null;
-    }
-    String text = readText(file);
-    String result = (text.endsWith("\n") ? text : text + "\n") + addition;
-    ObjectNode parsed = YamlFiles.tryParse(result);
-    boolean ok =
-        parsed != null
-            && lastField(parsed).equals("databases")
-            && layout
-                .aliases(parsed)
-                .containsAll(missing(wanted, present).stream().map(Database::alias).toList());
-    if (!ok) {
-      throw new InitiumDbException(
-          "Cannot add databases to "
-              + file
-              + ": 'databases' must be the last entry of the file, as a block mapping or list."
-              + " Add them manually: "
-              + missing(wanted, present).stream().map(Database::alias).toList()
-              + ".");
-    }
-    return result;
-  }
-
-  private static String lastField(ObjectNode node) {
-    String last = "";
-    for (var it = node.fieldNames(); it.hasNext(); ) {
-      last = it.next();
-    }
-    return last;
-  }
-
-  private static List<Database> missing(List<Database> databases, Set<String> present) {
-    return databases.stream().filter(d -> !present.contains(d.alias())).toList();
-  }
-
-  private static String caseSteps(List<Database> databases) {
-    StringBuilder sb = new StringBuilder();
-    for (Database db : databases) {
-      String alias = db.alias();
-      sb.append("  - alias: ").append(alias).append('\n');
-      sb.append("    queries: ").append(alias).append(".queries.yml\n");
-      sb.append("    dataset: ").append(alias).append(".dataset.xml\n");
-      sb.append("    preSql: ").append(alias).append(".pre.sql\n");
-      sb.append("    postSql: ").append(alias).append(".post.sql\n");
-    }
-    return sb.toString();
-  }
-
-  private static String environmentEntries(List<Database> databases) {
-    StringBuilder sb = new StringBuilder();
-    for (Database db : databases) {
-      String url =
-          "postgresql".equals(db.engine())
-              ? "jdbc:postgresql://HOST:5432/DATABASE"
-              : "jdbc:oracle:thin:@//HOST:1521/SERVICE";
-      sb.append("  ").append(db.alias()).append(":\n");
-      sb.append("    engine: ").append(db.engine()).append('\n');
-      sb.append("    jdbcUrl: \"").append(url).append("\"\n");
-      sb.append("    username: \"USERNAME\"\n");
-    }
-    return sb.toString();
-  }
-
-  private static String readText(Path file) {
-    try {
-      return Files.readString(file, StandardCharsets.UTF_8);
-    } catch (IOException e) {
-      throw new InitiumDbException("Unable to read " + file + ".");
-    }
+  private static ObjectNode queriesTemplate() {
+    ObjectNode root = NODES.objectNode();
+    root.put("schema", "SCHEMA_NAME");
+    ObjectNode table = root.putArray("tables").addObject();
+    table.put("name", "TABLE_NAME");
+    table.put("sql", "SELECT * FROM TABLE_NAME ORDER BY ID");
+    return root;
   }
 
   private static void write(Path file, String content) {

@@ -50,8 +50,8 @@ public final class CaptureService {
   private static int captureStep(
       DatabaseStep step, EnvironmentConfig environment, ConnectionResolver resolver)
       throws SQLException, DatabaseUnitException, IOException {
-    if (step.queries() == null) {
-      throw new InitiumDbException("The step declares no 'queries'; capture needs them.");
+    if (!Files.isRegularFile(step.queries())) {
+      throw new InitiumDbException("Queries file not found: " + step.queries());
     }
     QueriesConfig queries = QueriesConfig.load(step.queries());
     DatabaseSettings settings = environment.database(step.alias());

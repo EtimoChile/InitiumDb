@@ -13,7 +13,7 @@ import java.util.Set;
 public final class IdbCrypt {
 
   static final String USAGE =
-      "Usage: idb-crypt --environment dev [--case path/to/case.yml] [--config-dir dir]";
+      "Usage: idb-crypt --environment dev [--case path/to/case-dir] [--config-dir dir]";
 
   private IdbCrypt() {}
 
@@ -35,6 +35,10 @@ public final class IdbCrypt {
    */
   public static int run(
       String[] args, Map<String, String> env, Path homeDir, PrintStream out, PrintStream err) {
+    if (CliArgs.isHelp(args)) {
+      out.println(USAGE);
+      return 0;
+    }
     try {
       CliArgs cli =
           CliArgs.parse(args, Set.of("--case", "--environment", "--config-dir"), Set.of());

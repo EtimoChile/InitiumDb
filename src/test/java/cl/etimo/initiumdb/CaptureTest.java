@@ -2,6 +2,8 @@ package cl.etimo.initiumdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,7 +32,7 @@ class CaptureTest {
     CliRun run = fx.capture();
     // Then
     assertThat(run.exitCode()).isZero();
-    String dataset = fx.read("db/CRM/dataset.xml");
+    String dataset = fx.read("CRM.dataset.xml");
     assertThat(dataset).contains("Demo One").contains("Demo Two").doesNotContain("Not Selected");
     assertThat(dataset).contains("ACCOUNT_ID=\"2001\"");
   }
@@ -40,14 +42,14 @@ class CaptureTest {
     // Spec: README.md > Captured dataset (table order)
     // Given: ACCOUNT is configured before CUSTOMER
     fx.write(
-        "db/CRM/queries.yml",
+        "CRM.queries.yml",
         "tables:\n  - name: ACCOUNT\n    sql: SELECT * FROM ACCOUNT\n"
             + "  - name: CUSTOMER\n    sql: SELECT * FROM CUSTOMER ORDER BY CUSTOMER_ID\n");
     // When
     CliRun run = fx.capture();
     // Then
     assertThat(run.exitCode()).isZero();
-    String dataset = fx.read("db/CRM/dataset.xml");
+    String dataset = fx.read("CRM.dataset.xml");
     assertThat(dataset.indexOf("<ACCOUNT")).isPositive().isLessThan(dataset.indexOf("<CUSTOMER"));
   }
 
@@ -56,28 +58,28 @@ class CaptureTest {
     // Spec: README.md > idb-capture
     // Given
     fx.sql("DELETE FROM ACCOUNT");
-    fx.write("db/CRM/queries.yml", "tables:\n  - name: ACCOUNT\n    sql: SELECT * FROM ACCOUNT\n");
+    fx.write("CRM.queries.yml", "tables:\n  - name: ACCOUNT\n    sql: SELECT * FROM ACCOUNT\n");
     // When
     CliRun run = fx.capture();
     // Then
     assertThat(run.exitCode()).isZero();
-    assertThat(fx.path("db/CRM/dataset.xml")).exists();
+    assertThat(fx.path("CRM.dataset.xml")).exists();
   }
 
   @Test
   void failedCaptureKeepsTheExistingDataset() {
     // Spec: README.md > Errors, repeatability and observability
     // Given
-    fx.write("db/CRM/dataset.xml", "<dataset><CUSTOMER CUSTOMER_ID=\"1\"/></dataset>");
+    fx.write("CRM.dataset.xml", "<dataset><CUSTOMER CUSTOMER_ID=\"1\"/></dataset>");
     fx.write(
-        "db/CRM/queries.yml",
+        "CRM.queries.yml",
         "tables:\n  - name: CUSTOMER\n    sql: SELECT * FROM CUSTOMER\n"
             + "  - name: ACCOUNT\n    sql: SELECT * FROM NO_SUCH_TABLE\n");
     // When
     CliRun run = fx.capture();
     // Then
     assertThat(run.exitCode()).isEqualTo(1);
-    assertThat(fx.read("db/CRM/dataset.xml"))
+    assertThat(fx.read("CRM.dataset.xml"))
         .isEqualTo("<dataset><CUSTOMER CUSTOMER_ID=\"1\"/></dataset>");
     assertThat(run.err()).contains("Step 1 (CRM)");
   }
@@ -86,9 +88,9 @@ class CaptureTest {
   void captureRejectsNamesThatAreNotValidXmlNamesAndKeepsTheDataset() {
     // Spec: README.md > "SQL identifiers and quoting" (names must be valid XML names)
     // Given: a column with a space, and an existing good dataset
-    fx.write("db/CRM/dataset.xml", "<dataset><CUSTOMER CUSTOMER_ID=\"1\"/></dataset>");
+    fx.write("CRM.dataset.xml", "<dataset><CUSTOMER CUSTOMER_ID=\"1\"/></dataset>");
     fx.write(
-        "db/CRM/queries.yml",
+        "CRM.queries.yml",
         "tables:\n  - name: CUSTOMER\n"
             + "    sql: SELECT CUSTOMER_ID AS \"Full Name\" FROM CUSTOMER\n");
     // When
@@ -96,30 +98,27 @@ class CaptureTest {
     // Then
     assertThat(run.exitCode()).isEqualTo(1);
     assertThat(run.err()).contains("Full Name").contains("CUSTOMER").contains("valid XML name");
-    assertThat(fx.read("db/CRM/dataset.xml"))
+    assertThat(fx.read("CRM.dataset.xml"))
         .isEqualTo("<dataset><CUSTOMER CUSTOMER_ID=\"1\"/></dataset>");
   }
 
   @Test
-  void captureFailsWhenTheStepDeclaresNoQueries() {
+  void captureFailsWhenTheQueriesFileIsMissing() throws IOException {
     // Spec: README.md > Case configuration (queries used by idb-capture)
     // Given
-    fx.writeCase(
-        "version: 1\nname: t\ndatabases:\n  - alias: CRM\n    dataset: db/CRM/dataset.xml\n");
+    Files.delete(fx.path("CRM.queries.yml"));
     // When
     CliRun run = fx.capture();
     // Then
     assertThat(run.exitCode()).isEqualTo(1);
-    assertThat(run.err()).contains("queries");
+    assertThat(run.err()).contains("Queries file not found");
   }
 
   @Test
   void captureFailsForAnAliasMissingFromTheEnvironment() {
     // Spec: README.md > Environment configuration
     // Given
-    fx.writeCase(
-        "version: 1\nname: t\ndatabases:\n  - alias: BILLING\n    queries: db/CRM/queries.yml\n"
-            + "    dataset: db/CRM/dataset.xml\n");
+    fx.writeCase("version: 1\ndatabases:\n  - alias: BILLING\n");
     // When
     CliRun run = fx.capture();
     // Then

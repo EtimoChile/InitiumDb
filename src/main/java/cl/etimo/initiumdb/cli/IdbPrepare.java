@@ -9,7 +9,7 @@ import java.util.Map;
 public final class IdbPrepare {
 
   static final String USAGE =
-      "Usage: idb-prepare --case path/to/case.yml --environment qa [--config-dir dir]";
+      "Usage: idb-prepare --case path/to/case-dir --environment qa [--config-dir dir]";
 
   private IdbPrepare() {}
 

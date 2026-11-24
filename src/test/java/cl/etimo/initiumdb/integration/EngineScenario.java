@@ -41,15 +41,12 @@ public final class EngineScenario {
             + "\"\n    username: \""
             + username
             + "\"\n");
-    write(
-        project.resolve("case.yml"),
-        "version: 1\nname: it\ndatabases:\n  - alias: CRM\n    queries: db/CRM/queries.yml\n"
-            + "    dataset: db/CRM/dataset.xml\n");
-    write(project.resolve("db/CRM/queries.yml"), queries);
+    write(project.resolve("case.yml"), "version: 1\ndatabases:\n  - alias: CRM\n");
+    write(project.resolve("CRM.queries.yml"), queries);
   }
 
   public Path dataset() {
-    return project.resolve("db/CRM/dataset.xml");
+    return project.resolve("CRM.dataset.xml");
   }
 
   public String readDataset() throws IOException {
@@ -66,12 +63,7 @@ public final class EngineScenario {
 
   private Result run(boolean capture) {
     String[] args = {
-      "--case",
-      project.resolve("case.yml").toString(),
-      "--environment",
-      "dev",
-      "--config-dir",
-      configDir.toString()
+      "--case", project.toString(), "--environment", "dev", "--config-dir", configDir.toString()
     };
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     ByteArrayOutputStream err = new ByteArrayOutputStream();

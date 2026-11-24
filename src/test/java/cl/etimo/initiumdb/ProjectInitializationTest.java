@@ -3,6 +3,9 @@ package cl.etimo.initiumdb;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import cl.etimo.initiumdb.core.MasterKey;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,8 +21,20 @@ class ProjectInitializationTest {
   @TempDir Path home;
   @TempDir Path project;
 
+  private Path caseDir() {
+    return project.resolve("testdata");
+  }
+
   private Path caseFile() {
-    return project.resolve("testdata/case.yml");
+    return caseDir().resolve("case.yml");
+  }
+
+  private static JsonNode yaml(Path file) throws IOException {
+    return new ObjectMapper(new YAMLFactory()).readTree(Files.readString(file));
+  }
+
+  private static JsonNode json(Path file) throws IOException {
+    return new ObjectMapper().readTree(Files.readString(file));
   }
 
   private Path config(String name) {
@@ -35,7 +50,7 @@ class ProjectInitializationTest {
             NO_ENV,
             home,
             "--case",
-            caseFile().toString(),
+            caseDir().toString(),
             "--environment",
             "dev",
             "--database",
@@ -44,8 +59,8 @@ class ProjectInitializationTest {
     assertThat(run.exitCode()).isZero();
     assertThat(caseFile()).exists();
     assertThat(project.resolve("testdata/CRM.queries.yml")).exists();
-    assertThat(Files.readString(config("dev.yml"))).contains("environment: dev");
-    assertThat(Files.readString(config("dev.secrets.json"))).contains("\"CRM\": \"\"");
+    assertThat(yaml(config("dev.yml")).get("environment").asText()).isEqualTo("dev");
+    assertThat(json(config("dev.secrets.json")).get("CRM").asText()).isEmpty();
   }
 
   @Test
@@ -53,11 +68,11 @@ class ProjectInitializationTest {
     // Spec: README.md > Initialization
     // Given
     CliRun.init(
-        NO_ENV, home, "--case", caseFile().toString(), "--environment", "dev", "--database", "CRM");
+        NO_ENV, home, "--case", caseDir().toString(), "--environment", "dev", "--database", "CRM");
     byte[] first = Files.readAllBytes(MasterKey.keyPath(home));
     // When
     CliRun.init(
-        NO_ENV, home, "--case", caseFile().toString(), "--environment", "dev", "--database", "CRM");
+        NO_ENV, home, "--case", caseDir().toString(), "--environment", "dev", "--database", "CRM");
     // Then
     assertThat(Files.readAllBytes(MasterKey.keyPath(home))).isEqualTo(first);
   }
@@ -65,7 +80,7 @@ class ProjectInitializationTest {
   private CliRun init(String... extra) {
     java.util.List<String> args =
         new java.util.ArrayList<>(
-            java.util.List.of("--case", caseFile().toString(), "--environment", "dev"));
+            java.util.List.of("--case", caseDir().toString(), "--environment", "dev"));
     args.addAll(java.util.List.of(extra));
     return CliRun.init(NO_ENV, home, args.toArray(String[]::new));
   }
@@ -76,37 +91,32 @@ class ProjectInitializationTest {
     // Given: files initialized for CRM and then customised by the user
     init("--database", "CRM");
     Files.writeString(
-        config("dev.yml"),
-        Files.readString(config("dev.yml")).replace("USERNAME", "custom_user")
-            + "# trailing comment\n");
+        config("dev.yml"), Files.readString(config("dev.yml")).replace("USERNAME", "custom_user"));
     Files.writeString(project.resolve("testdata/CRM.queries.yml"), "custom: queries\n");
     Files.writeString(config("dev.secrets.json"), "{\"CRM\": \"hunter2\"}");
-    String caseBefore = Files.readString(caseFile());
     // When
     CliRun run = init("--database", "CRM", "--database", "postgresql:billing");
     // Then
     assertThat(run.exitCode()).isZero();
     assertThat(run.out()).contains("Updated: ").contains("Unchanged: ");
-    assertThat(Files.readString(caseFile()))
-        .startsWith(caseBefore)
-        .contains("  - alias: BILLING\n    queries: BILLING.queries.yml\n")
-        .contains("dataset: BILLING.dataset.xml")
-        .contains("preSql: BILLING.pre.sql")
-        .contains("postSql: BILLING.post.sql");
+    JsonNode steps = yaml(caseFile()).get("databases");
+    assertThat(steps).hasSize(2);
+    assertThat(steps.get(0).get("alias").asText()).isEqualTo("CRM");
+    JsonNode added = steps.get(1);
+    assertThat(added.get("alias").asText()).isEqualTo("BILLING");
+    assertThat(added.size()).isEqualTo(1);
     assertThat(project.resolve("testdata/BILLING.queries.yml")).exists();
     assertThat(project.resolve("testdata/BILLING.pre.sql")).exists().isEmptyFile();
     assertThat(project.resolve("testdata/BILLING.post.sql")).exists().isEmptyFile();
     assertThat(Files.readString(project.resolve("testdata/CRM.queries.yml")))
         .isEqualTo("custom: queries\n");
-    String environment = Files.readString(config("dev.yml"));
-    assertThat(environment)
-        .contains("username: \"custom_user\"")
-        .contains("# trailing comment")
-        .contains("  BILLING:\n    engine: postgresql\n    jdbcUrl: \"jdbc:postgresql://");
-    assertThat(environment.indexOf("  CRM:")).isLessThan(environment.indexOf("  BILLING:"));
-    assertThat(Files.readString(config("dev.secrets.json")))
-        .contains("\"CRM\" : \"hunter2\"")
-        .contains("\"BILLING\"");
+    JsonNode databases = yaml(config("dev.yml")).get("databases");
+    assertThat(databases.get("CRM").get("username").asText()).isEqualTo("custom_user");
+    assertThat(databases.get("BILLING").get("engine").asText()).isEqualTo("postgresql");
+    assertThat(databases.get("BILLING").get("jdbcUrl").asText()).startsWith("jdbc:postgresql://");
+    JsonNode secrets = json(config("dev.secrets.json"));
+    assertThat(secrets.get("CRM").asText()).isEqualTo("hunter2");
+    assertThat(secrets.get("BILLING").asText()).isEmpty();
   }
 
   @Test
@@ -136,9 +146,8 @@ class ProjectInitializationTest {
     CliRun run = init("--database", "postgresql:CRM");
     // Then
     assertThat(run.exitCode()).isZero();
-    assertThat(Files.readString(config("dev.yml")))
-        .contains("engine: oracle")
-        .doesNotContain("postgresql");
+    assertThat(yaml(config("dev.yml")).get("databases").get("CRM").get("engine").asText())
+        .isEqualTo("oracle");
   }
 
   @Test
@@ -160,21 +169,54 @@ class ProjectInitializationTest {
   }
 
   @Test
-  void initRefusesToExtendAFileWhereDatabasesIsNotTheLastEntryAndWritesNothing()
+  void initCompletesTheMissingFilesOfADatabaseAlreadyInTheCaseWithoutTouchingTheOthers()
       throws IOException {
+    // Spec: README.md > Initialization (file names are fixed by convention)
+    // Given: CRM is in the case with a customised post hook; its other files were deleted
+    init("--database", "CRM");
+    Files.writeString(project.resolve("testdata/CRM.post.sql"), "DELETE FROM T;\n");
+    Files.delete(project.resolve("testdata/CRM.queries.yml"));
+    Files.delete(project.resolve("testdata/CRM.pre.sql"));
+    String caseText = Files.readString(caseFile());
+    // When
+    CliRun run = init("--database", "CRM");
+    // Then
+    assertThat(run.exitCode()).isZero();
+    assertThat(project.resolve("testdata/CRM.queries.yml")).exists();
+    assertThat(project.resolve("testdata/CRM.pre.sql")).exists().isEmptyFile();
+    assertThat(Files.readString(project.resolve("testdata/CRM.post.sql")))
+        .isEqualTo("DELETE FROM T;\n");
+    assertThat(Files.readString(caseFile())).isEqualTo(caseText);
+  }
+
+  @Test
+  void initExtendsAnExistingCaseWhateverTheOrderOfItsEntries() throws IOException {
+    // Spec: README.md > Initialization (YAML is processed with the YAML library, not as text)
+    // Given: a flow-style case with another key after databases
+    Files.createDirectories(caseFile().getParent());
+    Files.writeString(caseFile(), "version: 1\ndatabases: [{alias: CRM}]\n" + "name: x\n");
+    // When
+    CliRun run = init("--database", "BILLING");
+    // Then
+    assertThat(run.exitCode()).isZero();
+    JsonNode root = yaml(caseFile());
+    assertThat(root.get("name").asText()).isEqualTo("x");
+    assertThat(root.get("databases")).hasSize(2);
+    assertThat(root.get("databases").get(1).get("alias").asText()).isEqualTo("BILLING");
+  }
+
+  @Test
+  void initRefusesAnExistingCaseWhoseDatabasesAreNotAListAndWritesNothing() throws IOException {
     // Spec: README.md > Initialization
     // Given
     Files.createDirectories(caseFile().getParent());
-    Files.writeString(
-        caseFile(),
-        "version: 1\nname: x\ndatabases:\n  - alias: CRM\n    queries: CRM.queries.yml\n"
-            + "    dataset: CRM.dataset.xml\nextra: true\n");
+    Files.writeString(caseFile(), "version: 1\nname: x\ndatabases: none\n");
     String before = Files.readString(caseFile());
     // When
     CliRun run = init("--database", "BILLING");
     // Then
     assertThat(run.exitCode()).isEqualTo(1);
-    assertThat(run.err()).contains("'databases' must be the last entry").contains("BILLING");
+    assertThat(run.err()).contains("'databases'").contains("must be a list");
     assertThat(Files.readString(caseFile())).isEqualTo(before);
     assertThat(config("dev.yml")).doesNotExist();
   }
@@ -187,13 +229,44 @@ class ProjectInitializationTest {
     CliRun run = init("--database", "oracle:crm", "--database", "PostgreSQL:billing");
     // Then
     assertThat(run.exitCode()).isZero();
-    assertThat(Files.readString(config("dev.yml")))
-        .contains("  CRM:\n    engine: oracle\n")
-        .contains("  BILLING:\n    engine: postgresql\n");
+    JsonNode databases = yaml(config("dev.yml")).get("databases");
+    assertThat(databases.get("CRM").get("engine").asText()).isEqualTo("oracle");
+    assertThat(databases.get("BILLING").get("engine").asText()).isEqualTo("postgresql");
     assertThat(project.resolve("testdata/CRM.queries.yml")).exists();
-    assertThat(Files.readString(config("dev.secrets.json")))
-        .contains("\"CRM\": \"\"")
-        .contains("\"BILLING\": \"\"");
+    JsonNode secrets = json(config("dev.secrets.json"));
+    assertThat(secrets.has("CRM")).isTrue();
+    assertThat(secrets.has("BILLING")).isTrue();
+  }
+
+  @Test
+  void helpPrintsTheUsageToStandardOutputAndWritesNothing() {
+    // Spec: README.md > Initialization (--help)
+    // When
+    CliRun run = CliRun.init(NO_ENV, home, "--help");
+    // Then
+    assertThat(run.exitCode()).isZero();
+    assertThat(run.err()).isEmpty();
+    assertThat(run.out())
+        .contains("Usage: idb-init")
+        .contains("--database [ENGINE:]NAME")
+        .contains("oracle:CRM")
+        .contains("never overwritten");
+    assertThat(MasterKey.keyPath(home)).doesNotExist();
+  }
+
+  @Test
+  void everyCommandAcceptsHelp() {
+    // Spec: README.md > Commands (--help)
+    for (CliRun run :
+        new CliRun[] {
+          CliRun.crypt(NO_ENV, home, "-h"),
+          CliRun.capture(NO_ENV, home, "--help"),
+          CliRun.prepare(NO_ENV, home, "--help")
+        }) {
+      assertThat(run.exitCode()).isZero();
+      assertThat(run.out()).startsWith("Usage: idb-");
+      assertThat(run.err()).isEmpty();
+    }
   }
 
   @Test
@@ -207,7 +280,7 @@ class ProjectInitializationTest {
             NO_ENV,
             home,
             "--case",
-            caseFile().toString(),
+            caseDir().toString(),
             "--environment",
             "qa",
             "--database",
@@ -229,7 +302,7 @@ class ProjectInitializationTest {
             NO_ENV,
             home,
             "--case",
-            caseFile().toString(),
+            caseDir().toString(),
             "--environment",
             "a/b",
             "--database",
@@ -259,7 +332,7 @@ class ProjectInitializationTest {
             NO_ENV,
             home,
             "--case",
-            caseFile().toString(),
+            caseDir().toString(),
             "--environment",
             "dev",
             "--database",
@@ -279,7 +352,7 @@ class ProjectInitializationTest {
             NO_ENV,
             home,
             "--case",
-            caseFile().toString(),
+            caseDir().toString(),
             "--environment",
             "dev",
             "--database",
@@ -288,18 +361,15 @@ class ProjectInitializationTest {
             "BILLING");
     // Then
     assertThat(run.exitCode()).isZero();
-    assertThat(Files.readString(caseFile()))
-        .contains("alias: CRM")
-        .contains("queries: CRM.queries.yml")
-        .contains("dataset: CRM.dataset.xml")
-        .contains("alias: BILLING")
-        .contains("dataset: BILLING.dataset.xml");
+    JsonNode steps = yaml(caseFile()).get("databases");
+    assertThat(steps.get(0).get("alias").asText()).isEqualTo("CRM");
+    assertThat(steps.get(1).get("alias").asText()).isEqualTo("BILLING");
     assertThat(project.resolve("testdata/CRM.queries.yml")).exists();
     assertThat(project.resolve("testdata/BILLING.queries.yml")).exists();
-    assertThat(Files.readString(config("dev.yml"))).contains("  CRM:").contains("  BILLING:");
-    assertThat(Files.readString(config("dev.secrets.json")))
-        .contains("\"CRM\": \"\"")
-        .contains("\"BILLING\": \"\"");
+    assertThat(yaml(config("dev.yml")).get("databases").has("CRM")).isTrue();
+    assertThat(yaml(config("dev.yml")).get("databases").has("BILLING")).isTrue();
+    assertThat(json(config("dev.secrets.json")).get("CRM").asText()).isEmpty();
+    assertThat(json(config("dev.secrets.json")).get("BILLING").asText()).isEmpty();
   }
 
   @Test
@@ -311,7 +381,7 @@ class ProjectInitializationTest {
             NO_ENV,
             home,
             "--case",
-            caseFile().toString(),
+            caseDir().toString(),
             "--environment",
             "dev",
             "--database",
@@ -320,16 +390,16 @@ class ProjectInitializationTest {
             "postgresql");
     // Then
     assertThat(run.exitCode()).isZero();
-    assertThat(Files.readString(config("dev.yml")))
-        .contains("engine: postgresql")
-        .contains("jdbc:postgresql://");
+    JsonNode crm = yaml(config("dev.yml")).get("databases").get("CRM");
+    assertThat(crm.get("engine").asText()).isEqualTo("postgresql");
+    assertThat(crm.get("jdbcUrl").asText()).startsWith("jdbc:postgresql://");
   }
 
   @Test
   void initRequiresAtLeastOneDatabaseAndWritesNothing() {
     // Spec: README.md > Initialization
     // When
-    CliRun run = CliRun.init(NO_ENV, home, "--case", caseFile().toString(), "--environment", "dev");
+    CliRun run = CliRun.init(NO_ENV, home, "--case", caseDir().toString(), "--environment", "dev");
     // Then
     assertThat(run.exitCode()).isEqualTo(1);
     assertThat(run.err()).contains("--database");
@@ -352,7 +422,7 @@ class ProjectInitializationTest {
       // When
       java.util.List<String> args =
           new java.util.ArrayList<>(
-              java.util.List.of("--case", caseFile().toString(), "--environment", "dev"));
+              java.util.List.of("--case", caseDir().toString(), "--environment", "dev"));
       args.addAll(java.util.List.of(bad));
       CliRun run = CliRun.init(NO_ENV, home, args.toArray(String[]::new));
       // Then

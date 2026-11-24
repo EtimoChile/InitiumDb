@@ -46,6 +46,11 @@ final class CliArgs {
     return parsed;
   }
 
+  /** Returns {@code true} when the command line asks for help ({@code --help} or {@code -h}). */
+  static boolean isHelp(String[] args) {
+    return java.util.Arrays.stream(args).anyMatch(a -> a.equals("--help") || a.equals("-h"));
+  }
+
   /** Returns every value of a repeatable option, in command-line order. */
   java.util.List<String> values(String name) {
     return lists.getOrDefault(name, java.util.List.of());

@@ -2,25 +2,46 @@ package cl.etimo.initiumdb.core;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-/** A case definition ({@code case.yml}): what to capture and prepare, in declared order. */
-public record CaseConfig(String name, List<DatabaseStep> databases) {
+/**
+ * A case: a directory holding {@code case.yml}, which lists the database aliases in execution
+ * order. The directory defines the case (its name is the directory name) and every file name is
+ * fixed by convention: for each alias {@code <ALIAS>.queries.yml}, {@code <ALIAS>.dataset.xml} and
+ * the optional hooks {@code <ALIAS>.pre.sql} and {@code <ALIAS>.post.sql} (DEC-009).
+ */
+public record CaseConfig(String name, Path dir, List<DatabaseStep> databases) {
+
+  /** Name of the case file inside the case directory. */
+  public static final String FILE = "case.yml";
 
   /**
-   * One database step. Paths are resolved relative to the case file; {@code queries}, {@code
-   * preSql} and {@code postSql} are {@code null} when not declared.
+   * One database step. Every path is the conventional one; the file may not exist (hooks are
+   * skipped when absent, and capture or prepare reports a missing queries or dataset file).
    */
   public record DatabaseStep(String alias, Path queries, Path dataset, Path preSql, Path postSql) {}
 
-  public static CaseConfig load(Path caseFile) {
-    Path file = caseFile.toAbsolutePath();
-    Path dir = file.getParent();
+  /** The conventional file of a database inside a case directory, e.g. {@code CRM.pre.sql}. */
+  public static Path file(Path caseDir, String alias, String suffix) {
+    return caseDir.resolve(alias + suffix);
+  }
+
+  public static CaseConfig load(Path caseDir) {
+    Path dir = caseDir.toAbsolutePath().normalize();
+    if (!Files.isDirectory(dir)) {
+      throw new InitiumDbException(
+          "Case directory not found: "
+              + dir
+              + " (a case is a directory that contains "
+              + FILE
+              + ").");
+    }
+    Path file = dir.resolve(FILE);
     ObjectNode root = YamlFiles.readObject(file, "Case file");
     YamlFiles.requireVersion(root, file);
-    String name = YamlFiles.requiredText(root, "name", file);
     JsonNode databases = root.get("databases");
     if (databases == null || !databases.isArray() || databases.isEmpty()) {
       throw new InitiumDbException("'databases' in " + file + " must be a non-empty list.");
@@ -31,29 +52,16 @@ public record CaseConfig(String name, List<DatabaseStep> databases) {
         throw new InitiumDbException(
             "Every entry of 'databases' in " + file + " must be a mapping.");
       }
-      Path dataset = path(dir, step, "dataset", file);
-      if (dataset == null) {
-        throw new InitiumDbException("Every database step in " + file + " needs a 'dataset'.");
-      }
+      String alias = YamlFiles.requiredText(step, "alias", file);
+      Names.require(alias, "database alias", file.toString());
       steps.add(
           new DatabaseStep(
-              alias(step, file),
-              path(dir, step, "queries", file),
-              dataset,
-              path(dir, step, "preSql", file),
-              path(dir, step, "postSql", file)));
+              alias,
+              file(dir, alias, ".queries.yml"),
+              file(dir, alias, ".dataset.xml"),
+              file(dir, alias, ".pre.sql"),
+              file(dir, alias, ".post.sql")));
     }
-    return new CaseConfig(name, List.copyOf(steps));
-  }
-
-  private static Path path(Path dir, JsonNode step, String field, Path file) {
-    String value = YamlFiles.optionalText(step, field, file);
-    return value == null ? null : dir.resolve(value).normalize();
-  }
-
-  private static String alias(JsonNode step, Path file) {
-    String alias = YamlFiles.requiredText(step, "alias", file);
-    Names.require(alias, "database alias", file.toString());
-    return alias;
+    return new CaseConfig(String.valueOf(dir.getFileName()), dir, List.copyOf(steps));
   }
 }

@@ -40,11 +40,9 @@ final class Fixture {
         "version: 1\nenvironment: dev\ndatabases:\n  CRM:\n    engine: postgresql\n    jdbcUrl: \""
             + url
             + "\"\n    username: \"sa\"\n");
-    writeCase(
-        "version: 1\nname: t\ndatabases:\n  - alias: CRM\n    queries: db/CRM/queries.yml\n"
-            + "    dataset: db/CRM/dataset.xml\n");
+    writeCase("version: 1\ndatabases:\n  - alias: CRM\n");
     write(
-        "db/CRM/queries.yml",
+        "CRM.queries.yml",
         "tables:\n  - name: CUSTOMER\n    sql: SELECT * FROM CUSTOMER WHERE CUSTOMER_ID IN (1001, 1002)"
             + " ORDER BY CUSTOMER_ID\n  - name: ACCOUNT\n    sql: SELECT * FROM ACCOUNT ORDER BY ACCOUNT_ID\n");
   }
@@ -75,7 +73,12 @@ final class Fixture {
     }
   }
 
+  /** The case is a directory; its file is always {@code case.yml}. */
   Path casePath() {
+    return project;
+  }
+
+  Path caseFile() {
     return project.resolve("case.yml");
   }
 
@@ -88,7 +91,7 @@ final class Fixture {
   }
 
   void writeCase(String yaml) {
-    writeFile(casePath(), yaml);
+    writeFile(caseFile(), yaml);
   }
 
   void writeEnvironment(String yaml) {

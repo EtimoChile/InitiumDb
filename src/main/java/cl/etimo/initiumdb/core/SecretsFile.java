@@ -118,6 +118,13 @@ public final class SecretsFile {
     return added ? render(file, root) : null;
   }
 
+  /** Returns the content of a new secrets file with an empty entry per name. */
+  static String create(Path file, Collection<String> names) {
+    ObjectNode root = MAPPER.createObjectNode();
+    names.forEach(name -> root.put(name, ""));
+    return render(file, root);
+  }
+
   private static String render(Path file, ObjectNode root) {
     DefaultPrettyPrinter printer =
         new DefaultPrettyPrinter().withObjectIndenter(new DefaultIndenter("  ", "\n"));

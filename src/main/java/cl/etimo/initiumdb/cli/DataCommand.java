@@ -37,6 +37,10 @@ final class DataCommand {
       Path homeDir,
       PrintStream out,
       PrintStream err) {
+    if (CliArgs.isHelp(args)) {
+      out.println(usage);
+      return 0;
+    }
     try {
       CliArgs cli =
           CliArgs.parse(args, Set.of("--case", "--environment", "--config-dir"), Set.of());

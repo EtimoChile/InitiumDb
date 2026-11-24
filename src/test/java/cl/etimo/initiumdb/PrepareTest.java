@@ -32,7 +32,7 @@ class PrepareTest {
   @BeforeEach
   void setUp() {
     fx = new Fixture(tmp);
-    fx.write("db/CRM/dataset.xml", DATASET);
+    fx.write("CRM.dataset.xml", DATASET);
   }
 
   @Test
@@ -78,7 +78,7 @@ class PrepareTest {
     // Spec: README.md > Design principles (no automatic dependency discovery)
     // Given: the child table is declared before its parent
     fx.write(
-        "db/CRM/dataset.xml",
+        "CRM.dataset.xml",
         "<dataset>\n  <ACCOUNT ACCOUNT_ID=\"2001\" CUSTOMER_ID=\"1001\" BALANCE=\"1\"/>\n"
             + "  <CUSTOMER CUSTOMER_ID=\"1001\" NAME=\"N\" STATUS=\"ACTIVE\"/>\n</dataset>\n");
     // When
@@ -93,11 +93,8 @@ class PrepareTest {
     // Spec: README.md > idb-prepare (step 4)
     // Given
     fx.sql("INSERT INTO CUSTOMER VALUES (1001, 'Old', 'INACTIVE')");
-    fx.write("db/CRM/pre.sql", "UPDATE CUSTOMER SET STATUS = 'PRE' WHERE CUSTOMER_ID = 1001;");
-    fx.write("db/CRM/post.sql", "UPDATE CUSTOMER SET STATUS = 'POST' WHERE CUSTOMER_ID = 1002;");
-    fx.writeCase(
-        "version: 1\nname: t\ndatabases:\n  - alias: CRM\n    dataset: db/CRM/dataset.xml\n"
-            + "    preSql: db/CRM/pre.sql\n    postSql: db/CRM/post.sql\n");
+    fx.write("CRM.pre.sql", "UPDATE CUSTOMER SET STATUS = 'PRE' WHERE CUSTOMER_ID = 1001;");
+    fx.write("CRM.post.sql", "UPDATE CUSTOMER SET STATUS = 'POST' WHERE CUSTOMER_ID = 1002;");
     // When
     CliRun run = fx.prepare();
     // Then: pre ran first (dataset then overwrote its effect); post ran last
@@ -111,11 +108,8 @@ class PrepareTest {
   void emptyAndCommentOnlyHooksAreAccepted() {
     // Spec: README.md > idb-prepare (SQL hooks; idb-init creates them empty)
     // Given
-    fx.write("db/CRM/pre.sql", "");
-    fx.write("db/CRM/post.sql", "-- nothing to run yet\n");
-    fx.writeCase(
-        "version: 1\nname: t\ndatabases:\n  - alias: CRM\n    dataset: db/CRM/dataset.xml\n"
-            + "    preSql: db/CRM/pre.sql\n    postSql: db/CRM/post.sql\n");
+    fx.write("CRM.pre.sql", "");
+    fx.write("CRM.post.sql", "-- nothing to run yet\n");
     // When
     CliRun run = fx.prepare();
     // Then
@@ -128,12 +122,9 @@ class PrepareTest {
     // Spec: README.md > idb-prepare (SQL hooks)
     // Given
     fx.write(
-        "db/CRM/post.sql",
+        "CRM.post.sql",
         "-- a comment; with a semicolon\n"
             + "UPDATE CUSTOMER SET NAME = 'a;b' /* x; y */ WHERE CUSTOMER_ID = 1001;\n");
-    fx.writeCase(
-        "version: 1\nname: t\ndatabases:\n  - alias: CRM\n    dataset: db/CRM/dataset.xml\n"
-            + "    postSql: db/CRM/post.sql\n");
     // When
     CliRun run = fx.prepare();
     // Then
@@ -141,21 +132,70 @@ class PrepareTest {
     assertThat(fx.value("SELECT NAME FROM CUSTOMER WHERE CUSTOMER_ID = 1001")).isEqualTo("a;b");
   }
 
+  private static List<String> plain(String script) {
+    return SqlScript.statements(script).stream().map(SqlScript.Statement::sql).toList();
+  }
+
+  @Test
+  void sqlScriptParsesConditionalDirectivesAndKeepsOtherComments() {
+    // Spec: README.md > Conditional statements
+    var statements =
+        SqlScript.statements(
+            "-- note\n-- idb:skip-if SELECT 1 FROM t WHERE a = 'x;y';\n/* hint */ INSERT INTO t VALUES (1);\n"
+                + "-- idb:run-if   SELECT 2 FROM t\nDELETE FROM t;\nDROP TABLE t;");
+    assertThat(statements).hasSize(3);
+    assertThat(statements.get(0).sql()).isEqualTo("-- note\n\n/* hint */ INSERT INTO t VALUES (1)");
+    assertThat(statements.get(0).guard())
+        .isEqualTo(new SqlScript.Guard(false, "SELECT 1 FROM t WHERE a = 'x;y'"));
+    assertThat(statements.get(1).sql()).isEqualTo("DELETE FROM t");
+    assertThat(statements.get(1).guard()).isEqualTo(new SqlScript.Guard(true, "SELECT 2 FROM t"));
+    assertThat(statements.get(2).guard()).isNull();
+    // other idb-looking text is only a directive as a line comment starting with idb:
+    assertThat(SqlScript.statements("/* idb:run-if x */ SELECT 1;").get(0).guard()).isNull();
+    assertThat(SqlScript.statements("SELECT 'idb:run-if x';").get(0).guard()).isNull();
+  }
+
+  @Test
+  void sqlScriptRejectsMalformedDirectives() {
+    // Spec: README.md > Conditional statements (a typo must not run a statement unconditionally)
+    for (String bad :
+        List.of(
+            "-- idb:runif SELECT 1\nSELECT 2;",
+            "-- idb:run-if\nSELECT 2;",
+            "-- idb:run-if SELECT 1\n-- idb:skip-if SELECT 1\nSELECT 2;",
+            "-- idb:run-if SELECT 1\n;SELECT 2;",
+            "-- idb:run-if SELECT 1\n",
+            "SELECT 2 -- idb:run-if SELECT 1\n;")) {
+      assertThatThrownBy(() -> SqlScript.statements(bad))
+          .as(bad)
+          .isInstanceOf(InitiumDbException.class);
+    }
+  }
+
   @Test
   void sqlScriptSplitsStatementsAndRejectsUnterminatedLiterals() {
     // Spec: README.md > idb-prepare (SQL hooks)
-    assertThat(SqlScript.statements("SELECT 1; ;SELECT 'a;b';\n-- end;"))
+    assertThat(plain("SELECT 1; ;SELECT 'a;b';\n-- end;"))
         .isEqualTo(List.of("SELECT 1", "SELECT 'a;b'"));
-    assertThatThrownBy(() -> SqlScript.statements("SELECT 'oops;"))
-        .isInstanceOf(InitiumDbException.class);
+    assertThatThrownBy(() -> plain("SELECT 'oops;")).isInstanceOf(InitiumDbException.class);
+  }
+
+  @Test
+  void sqlScriptKeepsCommentsInsideStatementsAndDropsCommentOnlyChunks() {
+    // Spec: README.md > idb-prepare (SQL hooks keep their comments, e.g. optimizer hints)
+    assertThat(
+            plain(
+                "-- header; kept\nSELECT /*+ FIRST_ROWS(1) */ 1 FROM t; -- tail\n/* only a comment */"))
+        .isEqualTo(List.of("-- header; kept\nSELECT /*+ FIRST_ROWS(1) */ 1 FROM t"));
+    assertThat(plain("-- nothing\n/* here */\n")).isEmpty();
   }
 
   @Test
   void sqlScriptKeepsSemicolonsAndEscapedQuotesInsideQuotedIdentifiers() {
     // Spec: README.md > idb-prepare (SQL hooks); "SQL identifiers and quoting"
-    assertThat(SqlScript.statements("SELECT \"a;b\" FROM t; SELECT \"x\"\";y\" FROM t;"))
+    assertThat(plain("SELECT \"a;b\" FROM t; SELECT \"x\"\";y\" FROM t;"))
         .isEqualTo(List.of("SELECT \"a;b\" FROM t", "SELECT \"x\"\";y\" FROM t"));
-    assertThatThrownBy(() -> SqlScript.statements("SELECT \"oops;"))
+    assertThatThrownBy(() -> plain("SELECT \"oops;"))
         .isInstanceOf(InitiumDbException.class)
         .hasMessageContaining("quoted identifier");
   }
@@ -165,12 +205,9 @@ class PrepareTest {
     // Spec: README.md > idb-prepare (SQL hooks)
     // Given: a column alias containing a semicolon, inside a statement
     fx.write(
-        "db/CRM/post.sql",
+        "CRM.post.sql",
         "UPDATE CUSTOMER SET NAME = (SELECT MAX(NAME) AS \"a;b\" FROM CUSTOMER)"
             + " WHERE CUSTOMER_ID = 1001;\n");
-    fx.writeCase(
-        "version: 1\nname: t\ndatabases:\n  - alias: CRM\n    dataset: db/CRM/dataset.xml\n"
-            + "    postSql: db/CRM/post.sql\n");
     // When
     CliRun run = fx.prepare();
     // Then
@@ -182,10 +219,7 @@ class PrepareTest {
   void aFailingPostSqlKeepsTheDatasetAlreadyApplied() {
     // Spec: README.md > idb-prepare (hooks run in autocommit; failure stops the run)
     // Given
-    fx.write("db/CRM/post.sql", "UPDATE NO_SUCH_TABLE SET X = 1;");
-    fx.writeCase(
-        "version: 1\nname: t\ndatabases:\n  - alias: CRM\n    dataset: db/CRM/dataset.xml\n"
-            + "    postSql: db/CRM/post.sql\n");
+    fx.write("CRM.post.sql", "UPDATE NO_SUCH_TABLE SET X = 1;");
     // When
     CliRun run = fx.prepare();
     // Then
@@ -197,16 +231,13 @@ class PrepareTest {
   void aFailingDatasetRollsBackAllItsRowsButKeepsPreSql() {
     // Spec: README.md > idb-prepare (dataset is all or nothing; hooks are not rolled back)
     // Given: preSql inserts a row; the dataset's second table has an unknown column
-    fx.write("db/CRM/pre.sql", "INSERT INTO CUSTOMER VALUES (9000, 'Pre', 'ACTIVE');");
+    fx.write("CRM.pre.sql", "INSERT INTO CUSTOMER VALUES (9000, 'Pre', 'ACTIVE');");
     fx.write(
-        "db/CRM/dataset.xml",
+        "CRM.dataset.xml",
         "<dataset>\n"
             + "  <CUSTOMER CUSTOMER_ID=\"1001\" NAME=\"New One\" STATUS=\"ACTIVE\"/>\n"
             + "  <ACCOUNT NO_SUCH_COLUMN=\"1\"/>\n"
             + "</dataset>\n");
-    fx.writeCase(
-        "version: 1\nname: t\ndatabases:\n  - alias: CRM\n    dataset: db/CRM/dataset.xml\n"
-            + "    preSql: db/CRM/pre.sql\n");
     // When
     CliRun run = fx.prepare();
     // Then
@@ -219,17 +250,23 @@ class PrepareTest {
   void aFailingStepStopsTheRunButEarlierStepsStayCommitted() {
     // Spec: README.md > idb-prepare (no distributed transaction)
     // Given: step 1 is valid, step 2 fails
-    fx.write("db/CRM/bad.sql", "UPDATE NO_SUCH_TABLE SET X = 1;");
-    fx.writeCase(
-        "version: 1\nname: t\ndatabases:\n"
-            + "  - alias: CRM\n    dataset: db/CRM/dataset.xml\n"
-            + "  - alias: CRM\n    dataset: db/CRM/dataset.xml\n    postSql: db/CRM/bad.sql\n");
+    fx.write("BILLING.dataset.xml", DATASET);
+    fx.write("BILLING.post.sql", "UPDATE NO_SUCH_TABLE SET X = 1;");
+    fx.writeEnvironment(
+        "version: 1\nenvironment: dev\ndatabases:\n"
+            + "  CRM:\n    engine: postgresql\n    jdbcUrl: \""
+            + fx.url
+            + "\"\n    username: \"sa\"\n"
+            + "  BILLING:\n    engine: postgresql\n    credential: CRM\n    jdbcUrl: \""
+            + fx.url
+            + "\"\n    username: \"sa\"\n");
+    fx.writeCase("version: 1\ndatabases:\n  - alias: CRM\n  - alias: BILLING\n");
     // When
     CliRun run = fx.prepare();
     // Then
     assertThat(run.exitCode()).isEqualTo(1);
     assertThat(run.out()).contains("Step 1 (CRM): prepared");
-    assertThat(run.err()).contains("Step 2 (CRM)");
+    assertThat(run.err()).contains("Step 2 (BILLING)");
     assertThat(fx.value("SELECT COUNT(*) FROM CUSTOMER")).isEqualTo("2");
   }
 
@@ -237,7 +274,7 @@ class PrepareTest {
   void prepareFailsWhenTheDatasetFileIsMissing() throws IOException {
     // Spec: README.md > Errors, repeatability and observability
     // Given
-    Files.delete(fx.path("db/CRM/dataset.xml"));
+    Files.delete(fx.path("CRM.dataset.xml"));
     // When
     CliRun run = fx.prepare();
     // Then
@@ -246,17 +283,43 @@ class PrepareTest {
   }
 
   @Test
-  void prepareFailsWhenADeclaredSqlScriptIsMissing() {
-    // Spec: README.md > Errors, repeatability and observability
+  void conditionalStatementsRunOnlyWhenTheirGuardAllows() {
+    // Spec: README.md > Conditional statements (-- idb:run-if / -- idb:skip-if)
+    // Given: the dataset leaves CUSTOMER 1001 present and 1002 absent; hooks are non-idempotent
+    fx.write(
+        "CRM.post.sql",
+        "-- idb:run-if SELECT 1 FROM CUSTOMER WHERE CUSTOMER_ID = 1001\n"
+            + "INSERT INTO ACCOUNT VALUES (3001, 1001, 1);\n"
+            + "-- idb:run-if SELECT 1 FROM CUSTOMER WHERE CUSTOMER_ID = 4242\n"
+            + "INSERT INTO ACCOUNT VALUES (3002, 1001, 1);\n"
+            + "-- idb:skip-if SELECT 1 FROM ACCOUNT WHERE ACCOUNT_ID = 3001;\n"
+            + "INSERT INTO ACCOUNT VALUES (3003, 1001, 1);\n"
+            + "-- idb:skip-if SELECT 1 FROM CUSTOMER WHERE CUSTOMER_ID = 4242\n"
+            + "INSERT INTO ACCOUNT VALUES (3004, 1001, 1);\n"
+            + "INSERT INTO ACCOUNT VALUES (3005, 1001, 1);\n");
+    // When
+    CliRun run = fx.prepare();
+    // Then
+    assertThat(run.exitCode()).as(run.err()).isZero();
+    assertThat(
+            fx.value(
+                "SELECT LISTAGG(ACCOUNT_ID, ',') WITHIN GROUP (ORDER BY ACCOUNT_ID)"
+                    + " FROM ACCOUNT WHERE ACCOUNT_ID >= 3000"))
+        .isEqualTo("3001,3004,3005");
+  }
+
+  @Test
+  void aMalformedOrDanglingDirectiveFailsBeforeAnythingRuns() {
+    // Spec: README.md > Conditional statements (a typo must never run a statement unconditionally)
     // Given
-    fx.writeCase(
-        "version: 1\nname: t\ndatabases:\n  - alias: CRM\n    dataset: db/CRM/dataset.xml\n"
-            + "    preSql: db/CRM/missing.sql\n");
+    fx.write("CRM.pre.sql", "INSERT INTO CUSTOMER VALUES (9000, 'Pre', 'ACTIVE');");
+    fx.write(
+        "CRM.post.sql", "-- idb:runif SELECT 1\nINSERT INTO CUSTOMER VALUES (9001, 'P', 'X');\n");
     // When
     CliRun run = fx.prepare();
     // Then
     assertThat(run.exitCode()).isEqualTo(1);
-    assertThat(run.err()).contains("preSql");
+    assertThat(run.err()).contains("Unknown directive 'idb:runif'");
     assertThat(fx.value("SELECT COUNT(*) FROM CUSTOMER")).isEqualTo("0");
   }
 
