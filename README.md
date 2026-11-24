@@ -49,7 +49,7 @@ Unpack an archive anywhere and put `bin/` on the `PATH`. The launchers use `JAVA
 ```bash
 idb-capture --case path/to/testdata/case.yml --environment dev [--config-dir dir]
 idb-prepare --case path/to/testdata/case.yml --environment qa [--config-dir dir]
-idb-init --case path/to/testdata/case.yml --environment dev [--config-dir dir] [--overwrite]
+idb-init --case path/to/testdata/case.yml --environment dev --database CRM [--database postgresql:BILLING ...] [--engine oracle|postgresql] [--config-dir dir]
 idb-crypt --environment dev [--case path/to/case.yml] [--config-dir dir]
 ```
 
@@ -94,15 +94,12 @@ repo-app/
       testdata/
         regression/
           case.yml
-          db/
-            CRM/
-              queries.yml
-              dataset.xml
-              pre.sql
-              post.sql
-            BILLING/
-              queries.yml
-              dataset.xml
+          CRM.queries.yml
+          CRM.dataset.xml
+          CRM.pre.sql
+          CRM.post.sql
+          BILLING.queries.yml
+          BILLING.dataset.xml
 ```
 
 Ready-to-copy examples for Oracle and PostgreSQL live in [`examples/`](examples): each has a `schema.sql` (disposable dev database only), a `config/dev.yml` environment, a `config/secrets.example.json` and a `testdata/regression` case. Copy `secrets.example.json` to `dev.secrets.json`, set the password and run `idb-crypt --environment dev --config-dir examples/<engine>/config`.
@@ -119,14 +116,14 @@ name: regression
 
 databases:
   - alias: CRM
-    queries: db/CRM/queries.yml
-    dataset: db/CRM/dataset.xml
-    preSql: db/CRM/pre.sql
-    postSql: db/CRM/post.sql
+    queries: CRM.queries.yml
+    dataset: CRM.dataset.xml
+    preSql: CRM.pre.sql
+    postSql: CRM.post.sql
 
   - alias: BILLING
-    queries: db/BILLING/queries.yml
-    dataset: db/BILLING/dataset.xml
+    queries: BILLING.queries.yml
+    dataset: BILLING.dataset.xml
 ```
 
 - `version`: configuration format version.
@@ -141,7 +138,7 @@ The precise YAML schema, optional fields and error behavior for missing files wi
 
 ### Capture queries
 
-Example `db/CRM/queries.yml`:
+Example `CRM.queries.yml`:
 
 ```yaml
 schema: CRM_OWNER
@@ -169,7 +166,7 @@ DBUnit folds a schema name to the engine's case on its own; InitiumDb overrides 
 
 ### Captured dataset
 
-Example `db/CRM/dataset.xml`:
+Example `CRM.dataset.xml`:
 
 ```xml
 <dataset>
@@ -195,16 +192,26 @@ databases:
     engine: oracle
     jdbcUrl: "jdbc:oracle:thin:@//dev-crm:1521/CRMDEV"
     username: "TDM_USER"
-    credential: "crm"
 
   BILLING:
     engine: postgresql
     jdbcUrl: "jdbc:postgresql://dev-billing:5432/billing"
     username: "tdm_user"
-    credential: "billing"
 ```
 
 A corresponding `qa.yml` would define the same logical aliases with QA endpoints and credentials. Environment files may be managed centrally or supplied locally; they need not be committed to each application repository.
+
+**Names.** Database aliases (in `case.yml` and the environment file) and credential names (in the secrets file and in `credential`) must be written in upper case: letters `A-Z`, digits and `_`, starting with a letter. Every command that reads those files rejects other names, and lookups are exact. This also keeps the matching environment variable names (below) identical to the name, so they can never collide. Database object names (schema, tables, columns) are a different matter and stay exact (see [SQL identifiers and quoting](#sql-identifiers-and-quoting)).
+
+**`credential` is optional.** It names the secret holding the database password and defaults to the alias. Set it only to share one secret between aliases or to use another name.
+
+**Environment variables.** Each field of a database can be given by `IDB_<ALIAS>_ENGINE`, `IDB_<ALIAS>_URL` and `IDB_<ALIAS>_USER` (the alias as written); the password comes from `IDB_CREDENTIAL_<NAME>`. A variable wins over the file, and the environment file may be absent when every database of the case is fully defined by variables, which is the intended setup for CI/CD:
+
+```bash
+IDB_CRM_ENGINE=postgresql IDB_CRM_URL=jdbc:postgresql://dev-crm:5432/crm IDB_CRM_USER=tdm_user \
+IDB_CREDENTIAL_CRM=... idb-prepare --case testdata/regression/case.yml --environment dev
+```
+
 
 **Environment portability has constraints:** a dataset captured in DEV is not automatically valid in QA if identifiers collide, referenced records are absent, or environment-specific values differ. The first design target is portable datasets without automatic value transformations; cases must be constructed accordingly. Per-environment datasets or value substitutions are **not currently defined**.
 
@@ -223,15 +230,15 @@ public interface ConnectionResolver {
 }
 ```
 
-The built-in resolver reads each password from the `IDB_CREDENTIAL_<NAME>` environment variable (the environment file's `credential` name, upper-cased, with non-alphanumerics replaced by `_`), falling back to the encrypted local secrets file (see [Local secrets](#local-secrets)). A corporate resolver may integrate with a **proprietary CD mechanism** without coupling the open-source core to it. The exact external credential-provider contract and CI-to-CD-mechanism access are **to be defined**.
+The built-in resolver reads each password from the `IDB_CREDENTIAL_<NAME>` environment variable (the credential name as written), falling back to the encrypted local secrets file (see [Local secrets](#local-secrets)). A corporate resolver may integrate with a **proprietary CD mechanism** without coupling the open-source core to it. The exact external credential-provider contract and CI-to-CD-mechanism access are **to be defined**.
 
 ### Initialization
 
 ```bash
-idb-init --case path/to/testdata/case.yml --environment dev [--config-dir dir] [--overwrite]
+idb-init --case path/to/testdata/case.yml --environment dev --database CRM [--database postgresql:BILLING ...] [--engine oracle|postgresql] [--config-dir dir]
 ```
 
-Creates, relative to the case file, `case.yml` and `db/CRM/queries.yml` templates, and in the configuration directory `<environment>.yml` and an empty `<environment>.secrets.json` (`{"crm": ""}`). It also creates the master key if it does not exist (see below). Existing files are skipped unless `--overwrite` is given; the secrets file is **never** overwritten. Templates contain no credentials.
+Initialization is **cumulative and never overwrites**. `--database [ENGINE:]NAME` is repeatable (at least one). `NAME` is converted to upper case and may use letters, digits and `_`; `ENGINE` is `oracle` or `postgresql` (case-insensitive) and defaults to `--engine` (default `oracle`). For each database it ensures, relative to the case file, a step in `case.yml` (declaring `queries`, `dataset`, `preSql` and `postSql`), a `<NAME>.queries.yml` template and empty `<NAME>.pre.sql` and `<NAME>.post.sql` hook files (`idb-prepare` accepts empty hooks), and in the configuration directory an entry in `<environment>.yml` (engine and a JDBC URL placeholder for that engine) and an empty entry in `<environment>.secrets.json` (for example `{"CRM": ""}`). Files that do not exist are created; files that exist only receive the databases they do not contain yet, appended at the end of `databases:`; an existing database entry, query file or secret is never modified. If an existing file cannot be extended (for example `databases:` is not its last entry, or the environment file declares another environment) nothing is written and the message names the databases to add by hand. The command reports each file as Created, Updated or Unchanged. It also creates the master key if it does not exist (see below). Templates contain no credentials.
 
 The configuration directory defaults to `~/.initiumdb`. The environment name accepts letters, digits, `_` and `-`.
 
@@ -241,7 +248,7 @@ The configuration directory defaults to `~/.initiumdb`. The environment name acc
 idb-crypt --environment dev [--case path/to/case.yml] [--config-dir dir]
 ```
 
-`<config-dir>/<environment>.secrets.json` maps each `credential` name of the environment file to its password. `idb-crypt` encrypts every non-empty cleartext value in place with AES-256-GCM (`enc:v1:aes256gcm:<nonce>:<ciphertext>`); already encrypted and empty values are left untouched, so it is idempotent. A missing, malformed or non-string-valued secrets file fails with exit code `1`. `--case` is accepted so an `idb-prepare` command line can be reused, but it is not read.
+`<config-dir>/<environment>.secrets.json` maps each credential name (the `credential` of the environment file, by default the alias) to its password. `idb-crypt` encrypts every non-empty cleartext value in place with AES-256-GCM (`enc:v1:aes256gcm:<nonce>:<ciphertext>`); already encrypted and empty values are left untouched, so it is idempotent. A missing, malformed or non-string-valued secrets file fails with exit code `1`. `--case` is accepted so an `idb-prepare` command line can be reused, but it is not read.
 
 Master key: the `IDB_MASTER_KEY` environment variable (hex of 64 chars, base64 of 32 bytes, or a raw 32-byte value); otherwise `~/.initiumdb/idb.key`, created with owner-only permissions where the file system supports POSIX permissions. This is protection of secrets at rest on one machine, not a vault: anyone holding the key can decrypt. Neither command prints decrypted secrets, and error messages never echo secrets or key material. How CI/CD supplies the key or integrates a corporate provider (e.g. a proprietary CD mechanism) remains **to be defined**.
 

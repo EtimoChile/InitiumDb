@@ -85,11 +85,14 @@ class DistributionIT {
             tmp.resolve("project/case.yml").toString(),
             "--environment",
             "dev",
+            "--database",
+            "CRM",
             "--config-dir",
             tmp.resolve("cfg").toString());
     // Then
     assertThat(result.exitCode()).as(result.output()).isZero();
     assertThat(tmp.resolve("project/case.yml")).isRegularFile();
+    assertThat(tmp.resolve("project/CRM.queries.yml")).isRegularFile();
     assertThat(tmp.resolve("cfg/dev.yml")).isRegularFile();
   }
 

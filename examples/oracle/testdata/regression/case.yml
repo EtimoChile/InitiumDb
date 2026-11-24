@@ -5,7 +5,7 @@ name: regression
 
 databases:
   - alias: CRM
-    queries: db/CRM/queries.yml
-    dataset: db/CRM/dataset.xml
-    preSql: db/CRM/pre.sql
+    queries: CRM.queries.yml
+    dataset: CRM.dataset.xml
+    preSql: CRM.pre.sql
     # postSql is optional and omitted here.

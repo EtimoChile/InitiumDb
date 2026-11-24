@@ -40,7 +40,7 @@ public final class EngineScenario {
             + jdbcUrl
             + "\"\n    username: \""
             + username
-            + "\"\n    credential: \"crm\"\n");
+            + "\"\n");
     write(
         project.resolve("case.yml"),
         "version: 1\nname: it\ndatabases:\n  - alias: CRM\n    queries: db/CRM/queries.yml\n"

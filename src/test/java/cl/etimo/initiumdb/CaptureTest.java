@@ -146,7 +146,7 @@ class CaptureTest {
     fx.writeEnvironment(
         "version: 1\nenvironment: dev\ndatabases:\n  CRM:\n    engine: postgresql\n    jdbcUrl: \""
             + url
-            + "\"\n    username: \"sa\"\n    credential: \"crm\"\n");
+            + "\"\n    username: \"sa\"\n");
     // When
     CliRun run = fx.capture();
     // Then

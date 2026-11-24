@@ -46,7 +46,11 @@ final class DataCommand {
               cli.require("--environment"), configDir != null ? Path.of(configDir) : null, homeDir);
       CaseConfig caseConfig = CaseConfig.load(Path.of(cli.require("--case")));
       EnvironmentConfig environment =
-          EnvironmentConfig.load(layout.environmentFile(), layout.environment());
+          EnvironmentConfig.load(
+              layout.environmentFile(),
+              layout.environment(),
+              caseConfig.databases().stream().map(s -> s.alias()).toList(),
+              env);
       ConnectionResolver resolver =
           new JdbcConnectionResolver(
               environment,

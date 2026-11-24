@@ -2,6 +2,8 @@
 
 - Project bootstrapped: governance, test prompts, Maven project (Java 25, `cl.etimo.initiumdb`).
 - Implemented: `idb-init`, `idb-crypt` (DEC-003), `idb-capture` and `idb-prepare` (DBUnit `REFRESH`, declared table order) in `cli`, with `core` services, configuration loaders, `ConnectionResolver`/`CredentialProvider` and `DbUnitSession`.
+- `idb-init --database [ENGINE:]NAME` (repeatable, required, upper-cased) is cumulative and never overwrites: it creates or extends `case.yml`, `<NAME>.queries.yml`, environment and secrets files, adding only missing databases, with empty `<NAME>.pre.sql`/`<NAME>.post.sql` hooks that `idb-prepare` accepts (append-only, verified by re-parsing; no `--overwrite`). Flat per-database files next to `case.yml`; `case.yml` format unchanged, explicit paths still win.
+- Aliases and credential names: upper case, digits, `_` (`core/Names`), validated in case, environment, secrets files and `idb-init`; `credential` optional (default alias); `IDB_<ALIAS>_ENGINE/URL/USER` override or replace the environment file.
 - Engines: `oracle` and `postgresql` as thin profiles (DEC-004); object names exact, SQL by engine rules (DEC-005).
 - `idb-capture` rejects table or column names that are not valid XML names (PEND-006 tracks encoding them).
 - Tooling: Maven, JUnit 5, AssertJ, Mockito 5.20.0 with byte-buddy 1.17.7 (needed on Java 25), Testcontainers 2.0.2, Spotless (google-java-format 1.28.0), `-Xlint:all -Werror`, pre-commit.

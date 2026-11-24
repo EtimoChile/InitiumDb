@@ -11,20 +11,32 @@ final class CliArgs {
 
   private final Map<String, String> values = new HashMap<>();
   private final Set<String> flags = new HashSet<>();
+  private final Map<String, java.util.List<String>> lists = new HashMap<>();
 
   private CliArgs() {}
 
   static CliArgs parse(String[] args, Set<String> valueOptions, Set<String> flagOptions) {
+    return parse(args, valueOptions, flagOptions, Set.of());
+  }
+
+  /**
+   * Like {@link #parse(String[], Set, Set)}; options in {@code repeatable} may be given many times.
+   */
+  static CliArgs parse(
+      String[] args, Set<String> valueOptions, Set<String> flagOptions, Set<String> repeatable) {
     CliArgs parsed = new CliArgs();
     for (int i = 0; i < args.length; i++) {
       String arg = args[i];
       if (flagOptions.contains(arg)) {
         parsed.flags.add(arg);
-      } else if (valueOptions.contains(arg)) {
+      } else if (valueOptions.contains(arg) || repeatable.contains(arg)) {
         if (i + 1 >= args.length || args[i + 1].startsWith("--")) {
           throw new InitiumDbException("Option " + arg + " requires a value.");
         }
-        if (parsed.values.put(arg, args[++i]) != null) {
+        String given = args[++i];
+        if (repeatable.contains(arg)) {
+          parsed.lists.computeIfAbsent(arg, k -> new java.util.ArrayList<>()).add(given);
+        } else if (parsed.values.put(arg, given) != null) {
           throw new InitiumDbException("Option " + arg + " given more than once.");
         }
       } else {
@@ -32,6 +44,11 @@ final class CliArgs {
       }
     }
     return parsed;
+  }
+
+  /** Returns every value of a repeatable option, in command-line order. */
+  java.util.List<String> values(String name) {
+    return lists.getOrDefault(name, java.util.List.of());
   }
 
   boolean flag(String name) {

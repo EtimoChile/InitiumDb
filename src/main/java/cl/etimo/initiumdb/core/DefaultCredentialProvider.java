@@ -1,13 +1,12 @@
 package cl.etimo.initiumdb.core;
 
 import java.nio.file.Path;
-import java.util.Locale;
 import java.util.Map;
 import java.util.function.Supplier;
 
 /**
- * Looks a password up first in the {@code IDB_CREDENTIAL_<NAME>} environment variable (name
- * upper-cased, non-alphanumerics replaced by '_'), then in the local secrets file.
+ * Looks a password up first in the {@code IDB_CREDENTIAL_<NAME>} environment variable (name as
+ * written), then in the local secrets file.
  */
 public final class DefaultCredentialProvider implements CredentialProvider {
 
@@ -24,7 +23,7 @@ public final class DefaultCredentialProvider implements CredentialProvider {
 
   /** Name of the environment variable that overrides the secrets file for a credential. */
   public static String variableName(String credential) {
-    return "IDB_CREDENTIAL_" + credential.toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]", "_");
+    return "IDB_CREDENTIAL_" + credential;
   }
 
   @Override

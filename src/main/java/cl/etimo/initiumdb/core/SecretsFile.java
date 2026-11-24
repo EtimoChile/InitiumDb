@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.function.Supplier;
 
@@ -20,7 +21,9 @@ import java.util.function.Supplier;
  */
 public final class SecretsFile {
 
-  private static final ObjectMapper MAPPER = new ObjectMapper();
+  private static final ObjectMapper MAPPER =
+      new ObjectMapper()
+          .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
 
   private SecretsFile() {}
 
@@ -85,6 +88,9 @@ public final class SecretsFile {
     try {
       JsonNode node = MAPPER.readTree(Files.readString(file, StandardCharsets.UTF_8));
       if (node instanceof ObjectNode object) {
+        object
+            .fieldNames()
+            .forEachRemaining(n -> Names.require(n, "credential name", file.toString()));
         return object;
       }
     } catch (JsonProcessingException e) {
@@ -95,12 +101,37 @@ public final class SecretsFile {
     throw new InitiumDbException("Secrets file " + file + " must be a valid JSON object.");
   }
 
-  private static void write(Path file, ObjectNode root) {
+  /**
+   * Returns the content of {@code file} with an empty entry added for every name that is missing,
+   * or {@code null} when nothing is missing. Existing entries are kept exactly as they are. The
+   * file is not modified.
+   */
+  static String withMissing(Path file, Collection<String> names) {
+    ObjectNode root = read(file);
+    boolean added = false;
+    for (String name : names) {
+      if (!root.has(name)) {
+        root.put(name, "");
+        added = true;
+      }
+    }
+    return added ? render(file, root) : null;
+  }
+
+  private static String render(Path file, ObjectNode root) {
     DefaultPrettyPrinter printer =
         new DefaultPrettyPrinter().withObjectIndenter(new DefaultIndenter("  ", "\n"));
     try {
-      Files.writeString(
-          file, MAPPER.writer(printer).writeValueAsString(root) + "\n", StandardCharsets.UTF_8);
+      return MAPPER.writer(printer).writeValueAsString(root) + "\n";
+    } catch (IOException e) {
+      throw new InitiumDbException("Unable to write secrets file " + file + ".");
+    }
+  }
+
+  private static void write(Path file, ObjectNode root) {
+    String content = render(file, root);
+    try {
+      Files.writeString(file, content, StandardCharsets.UTF_8);
     } catch (IOException e) {
       throw new InitiumDbException("Unable to write secrets file " + file + ".");
     }

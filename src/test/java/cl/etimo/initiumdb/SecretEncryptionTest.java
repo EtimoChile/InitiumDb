@@ -36,7 +36,7 @@ class SecretEncryptionTest {
   void cryptEncryptsCleartextSecretsAndLeavesNoCleartextInFileOrOutput() throws IOException {
     // Spec: README.md > Local secrets
     // Given
-    writeSecrets("{\"crm\": \"hunter2\"}");
+    writeSecrets("{\"CRM\": \"hunter2\"}");
     // When
     CliRun run = CliRun.crypt(NO_ENV, home, "--environment", "dev");
     // Then
@@ -49,11 +49,11 @@ class SecretEncryptionTest {
   void encryptedSecretsDecryptWithTheMasterKey() throws IOException {
     // Spec: README.md > Local secrets
     // Given
-    writeSecrets("{\"crm\": \"hunter2\"}");
+    writeSecrets("{\"CRM\": \"hunter2\"}");
     CliRun.crypt(NO_ENV, home, "--environment", "dev");
     // When
     byte[] key = MasterKey.loadOrCreate(NO_ENV, home);
-    String token = Files.readString(secrets()).split("\"crm\"\\s*:\\s*\"")[1].split("\"")[0];
+    String token = Files.readString(secrets()).split("\"CRM\"\\s*:\\s*\"")[1].split("\"")[0];
     // Then
     assertThat(SecretCipher.decrypt(token, key)).isEqualTo("hunter2");
   }
@@ -62,7 +62,7 @@ class SecretEncryptionTest {
   void cryptDoesNotReencryptAlreadyEncryptedSecrets() throws IOException {
     // Spec: README.md > Local secrets
     // Given
-    writeSecrets("{\"crm\": \"hunter2\"}");
+    writeSecrets("{\"CRM\": \"hunter2\"}");
     CliRun.crypt(NO_ENV, home, "--environment", "dev");
     String afterFirst = Files.readString(secrets());
     // When
@@ -76,25 +76,25 @@ class SecretEncryptionTest {
   void cryptLeavesEmptySecretsUntouched() throws IOException {
     // Spec: README.md > Local secrets
     // Given
-    writeSecrets("{\"crm\": \"\"}");
+    writeSecrets("{\"CRM\": \"\"}");
     // When
     CliRun run = CliRun.crypt(NO_ENV, home, "--environment", "dev");
     // Then
     assertThat(run.exitCode()).isZero();
-    assertThat(Files.readString(secrets())).isEqualTo("{\"crm\": \"\"}");
+    assertThat(Files.readString(secrets())).isEqualTo("{\"CRM\": \"\"}");
   }
 
   @Test
   void cryptUsesMasterKeyFromEnvironmentVariableWithoutCreatingKeyFile() throws IOException {
     // Spec: README.md > Local secrets (key resolution)
     // Given
-    writeSecrets("{\"crm\": \"hunter2\"}");
+    writeSecrets("{\"CRM\": \"hunter2\"}");
     // When
     CliRun run = CliRun.crypt(Map.of(MasterKey.ENV_VAR, HEX_KEY), home, "--environment", "dev");
     // Then
     assertThat(run.exitCode()).isZero();
     assertThat(MasterKey.keyPath(home)).doesNotExist();
-    String token = Files.readString(secrets()).split("\"crm\"\\s*:\\s*\"")[1].split("\"")[0];
+    String token = Files.readString(secrets()).split("\"CRM\"\\s*:\\s*\"")[1].split("\"")[0];
     byte[] key = java.util.HexFormat.of().parseHex(HEX_KEY);
     assertThat(SecretCipher.decrypt(token, key)).isEqualTo("hunter2");
   }
@@ -103,7 +103,7 @@ class SecretEncryptionTest {
   void cryptFailsOnInvalidMasterKeyWithoutEchoingIt() throws IOException {
     // Spec: README.md > Local secrets (key resolution)
     // Given
-    writeSecrets("{\"crm\": \"hunter2\"}");
+    writeSecrets("{\"CRM\": \"hunter2\"}");
     // When
     CliRun run =
         CliRun.crypt(Map.of(MasterKey.ENV_VAR, "too-short-key"), home, "--environment", "dev");
@@ -128,7 +128,7 @@ class SecretEncryptionTest {
   void cryptFailsOnMalformedSecretsFileWithoutLeakingItsContent() throws IOException {
     // Spec: README.md > Local secrets
     // Given
-    writeSecrets("{\"crm\": \"hunter2\"");
+    writeSecrets("{\"CRM\": \"hunter2\"");
     // When
     CliRun run = CliRun.crypt(NO_ENV, home, "--environment", "dev");
     // Then
@@ -140,12 +140,26 @@ class SecretEncryptionTest {
   void cryptFailsWhenASecretIsNotAString() throws IOException {
     // Spec: README.md > Local secrets
     // Given
-    writeSecrets("{\"crm\": 12345}");
+    writeSecrets("{\"CRM\": 12345}");
     // When
     CliRun run = CliRun.crypt(NO_ENV, home, "--environment", "dev");
     // Then
     assertThat(run.exitCode()).isEqualTo(1);
-    assertThat(run.err()).contains("'crm'");
+    assertThat(run.err()).contains("'CRM'");
+  }
+
+  @Test
+  void cryptRejectsCredentialNamesThatAreNotUpperCaseAndLeavesTheFileUntouched()
+      throws IOException {
+    // Spec: README.md > Local secrets (names: upper case, digits, '_')
+    // Given
+    writeSecrets("{\"crm\": \"hunter2\"}");
+    // When
+    CliRun run = CliRun.crypt(NO_ENV, home, "--environment", "dev");
+    // Then
+    assertThat(run.exitCode()).isEqualTo(1);
+    assertThat(run.err()).contains("Invalid credential name 'crm'");
+    assertThat(Files.readString(secrets())).isEqualTo("{\"crm\": \"hunter2\"}");
   }
 
   @Test
@@ -172,7 +186,7 @@ class SecretEncryptionTest {
   void cryptAcceptsTheCaseOptionSoPrepareCommandLinesCanBeReused() throws IOException {
     // Spec: README.md > Local secrets
     // Given
-    writeSecrets("{\"crm\": \"hunter2\"}");
+    writeSecrets("{\"CRM\": \"hunter2\"}");
     // When
     CliRun run = CliRun.crypt(NO_ENV, home, "--case", "any/case.yml", "--environment", "dev");
     // Then

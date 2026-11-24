@@ -13,7 +13,10 @@ import java.nio.file.Path;
 /** Strict YAML reading helpers shared by the configuration loaders. */
 final class YamlFiles {
 
-  private static final ObjectMapper MAPPER = new ObjectMapper(new YAMLFactory());
+  private static final ObjectMapper MAPPER =
+      new ObjectMapper(
+          new YAMLFactory()
+              .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION));
 
   private YamlFiles() {}
 
@@ -33,6 +36,15 @@ final class YamlFiles {
       throw new InitiumDbException("Unable to read " + what + " " + file + ".");
     }
     throw new InitiumDbException(what + " " + file + " must be a valid YAML mapping.");
+  }
+
+  /** Parses YAML text into a mapping, or returns {@code null} when it is not a valid mapping. */
+  static ObjectNode tryParse(String text) {
+    try {
+      return MAPPER.readTree(text) instanceof ObjectNode object ? object : null;
+    } catch (JsonProcessingException e) {
+      return null;
+    }
   }
 
   static void requireVersion(ObjectNode node, Path file) {

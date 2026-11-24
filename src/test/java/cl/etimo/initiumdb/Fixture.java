@@ -39,7 +39,7 @@ final class Fixture {
     writeEnvironment(
         "version: 1\nenvironment: dev\ndatabases:\n  CRM:\n    engine: postgresql\n    jdbcUrl: \""
             + url
-            + "\"\n    username: \"sa\"\n    credential: \"crm\"\n");
+            + "\"\n    username: \"sa\"\n");
     writeCase(
         "version: 1\nname: t\ndatabases:\n  - alias: CRM\n    queries: db/CRM/queries.yml\n"
             + "    dataset: db/CRM/dataset.xml\n");

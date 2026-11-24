@@ -37,7 +37,7 @@ public record CaseConfig(String name, List<DatabaseStep> databases) {
       }
       steps.add(
           new DatabaseStep(
-              YamlFiles.requiredText(step, "alias", file),
+              alias(step, file),
               path(dir, step, "queries", file),
               dataset,
               path(dir, step, "preSql", file),
@@ -49,5 +49,11 @@ public record CaseConfig(String name, List<DatabaseStep> databases) {
   private static Path path(Path dir, JsonNode step, String field, Path file) {
     String value = YamlFiles.optionalText(step, field, file);
     return value == null ? null : dir.resolve(value).normalize();
+  }
+
+  private static String alias(JsonNode step, Path file) {
+    String alias = YamlFiles.requiredText(step, "alias", file);
+    Names.require(alias, "database alias", file.toString());
+    return alias;
   }
 }

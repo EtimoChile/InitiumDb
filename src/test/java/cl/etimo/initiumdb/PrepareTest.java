@@ -108,6 +108,22 @@ class PrepareTest {
   }
 
   @Test
+  void emptyAndCommentOnlyHooksAreAccepted() {
+    // Spec: README.md > idb-prepare (SQL hooks; idb-init creates them empty)
+    // Given
+    fx.write("db/CRM/pre.sql", "");
+    fx.write("db/CRM/post.sql", "-- nothing to run yet\n");
+    fx.writeCase(
+        "version: 1\nname: t\ndatabases:\n  - alias: CRM\n    dataset: db/CRM/dataset.xml\n"
+            + "    preSql: db/CRM/pre.sql\n    postSql: db/CRM/post.sql\n");
+    // When
+    CliRun run = fx.prepare();
+    // Then
+    assertThat(run.exitCode()).isZero();
+    assertThat(fx.value("SELECT COUNT(*) FROM CUSTOMER")).isEqualTo("2");
+  }
+
+  @Test
   void sqlHooksSupportSemicolonsInsideLiteralsAndComments() {
     // Spec: README.md > idb-prepare (SQL hooks)
     // Given
@@ -248,7 +264,7 @@ class PrepareTest {
   void prepareUsesThePasswordFromTheEncryptedSecretsFile() {
     // Spec: README.md > Local secrets
     // Given: the password only lives, encrypted, in the secrets file
-    fx.write("../cfg/dev.secrets.json", "{\"crm\": \"" + Fixture.PASSWORD + "\"}");
+    fx.write("../cfg/dev.secrets.json", "{\"CRM\": \"" + Fixture.PASSWORD + "\"}");
     CliRun crypt =
         CliRun.crypt(
             Map.of(), fx.home, "--environment", "dev", "--config-dir", fx.configDir.toString());
@@ -264,7 +280,7 @@ class PrepareTest {
   void prepareRejectsACleartextSecretsFileWithoutLeakingIt() {
     // Spec: README.md > Local secrets
     // Given
-    fx.write("../cfg/dev.secrets.json", "{\"crm\": \"p4ssw0rd-xyz\"}");
+    fx.write("../cfg/dev.secrets.json", "{\"CRM\": \"p4ssw0rd-xyz\"}");
     // When
     CliRun run = CliRun.prepare(Map.of(), fx.home, fx.args());
     // Then
@@ -278,7 +294,7 @@ class PrepareTest {
     // Spec: README.md > Local secrets
     // Given
     String token = SecretCipher.encrypt(Fixture.PASSWORD, new byte[32]);
-    fx.write("../cfg/dev.secrets.json", "{\"crm\": \"" + token + "\"}");
+    fx.write("../cfg/dev.secrets.json", "{\"CRM\": \"" + token + "\"}");
     // When
     CliRun run = CliRun.prepare(Map.of(), fx.home, fx.args());
     // Then
