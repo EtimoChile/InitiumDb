@@ -66,3 +66,13 @@ stay declarative; repeatability comes from idempotent statements (DEC-006). Any
 conditional execution must be a small notation over plain statements, not
 procedural code.
 Artifacts: `README.md`, `core/SqlScript`.
+
+DEC-008 | ACTIVE | Folder distribution with launcher scripts
+`maven-assembly-plugin` (phase `package`) builds `bin/` (four `idb-*` launchers,
+shell and `.cmd`, using `JAVA_HOME` or `java` from `PATH`) and `lib/` (project
+jar plus runtime jars) and an empty `drivers/` as zip, tar.gz
+and a folder. JDBC drivers are not bundled (`provided` scope): the user supplies
+them, so Oracle and other non-Apache licenses are never redistributed. A fat jar
+was rejected for the same reason.
+Artifacts: `pom.xml`, `src/assembly/dist.xml`, `src/main/dist/bin/`, `DistributionIT`.
+changelog: Package the four commands as a folder distribution with launcher scripts.

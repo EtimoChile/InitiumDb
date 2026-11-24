@@ -30,6 +30,20 @@ InitiumDb is intended **only for development and QA databases, never production*
 7. **Minimal privilege.** `capture` requires read access to selected tables; `prepare` requires only the DML privileges needed for the configured data and optional SQL hooks.
 8. **No production-data-management guarantees.** InitiumDb is not an ILM, archiving, backup, masking or full database restoration tool.
 
+## Installation
+
+`mvn package` builds the distribution folder `target/initiumdb-<version>-dist/initiumdb-<version>/` and the archives `initiumdb-<version>-dist.zip` and `.tar.gz`:
+
+```text
+initiumdb-<version>/
+  bin/   idb-capture, idb-prepare, idb-init, idb-crypt   (shell scripts)
+         idb-capture.cmd, idb-prepare.cmd, ...           (Windows)
+  lib/   initiumdb jar and its runtime jars (no JDBC drivers)
+  drivers/  empty; put your JDBC driver jars here
+```
+
+Unpack an archive anywhere and put `bin/` on the `PATH`. The launchers use `JAVA_HOME` when it is set and otherwise `java` from the `PATH`; Java 25 or later is required. Extra JVM options can be passed in `IDB_JAVA_OPTS`. JDBC drivers are not distributed, so their licenses never constrain the Apache 2.0 distribution: download the driver for your engine (PostgreSQL, Oracle, ...) from its vendor and copy the jar into `drivers/`. Without it, the commands fail with a message pointing to that folder.
+
 ## Commands
 
 ```bash
@@ -262,7 +276,7 @@ If `idb-prepare` exits with a nonzero status, the pipeline should fail that step
 - **Dataset format:** DBUnit Flat XML.
 - **Configuration format:** YAML.
 - **Initial target engines:** Oracle and PostgreSQL.
-- **Distribution:** four Java CLI executables (`idb-capture`, `idb-prepare`, `idb-init`, `idb-crypt`); minimum Java version is 25 (LTS); exact packaging **to be defined**.
+- **Distribution:** four Java CLI executables (`idb-capture`, `idb-prepare`, `idb-init`, `idb-crypt`); minimum Java version is 25 (LTS); distributed as a folder with launcher scripts (see [Installation](#installation)).
 
 Engine-specific behavior is isolated in a thin per-engine profile (DBUnit data type factory and properties, session schema). There is no requirement for database-resident InitiumDb code or objects.
 
@@ -295,7 +309,7 @@ The following items should be settled before considering this README an implemen
 3. Secret-provider contract and integration with CI/CD and proprietary CD mechanisms.
 4. Handling of case-specific cleanup, sequence values, triggers and generated identifiers.
 5. Portability rules for datasets captured in one environment and applied to another.
-6. Packaging, installation and release process.
+6. Release process.
 
 ## License and governance
 

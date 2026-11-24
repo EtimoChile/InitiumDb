@@ -52,17 +52,22 @@
       <version>${slf4j.version}</version>
       <scope>runtime</scope>
     </dependency>
+    <!--
+      JDBC drivers are provided by the user (DEC-008): they are not redistributed, so their
+      licenses never constrain the Apache 2.0 distribution. `provided` keeps them on the build
+      and test classpath but out of the distribution's lib/.
+    -->
     <dependency>
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>
       <version>${postgresql.version}</version>
-      <scope>runtime</scope>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>com.oracle.database.jdbc</groupId>
       <artifactId>ojdbc11</artifactId>
       <version>${ojdbc.version}</version>
-      <scope>runtime</scope>
+      <scope>provided</scope>
     </dependency>
     <!-- Test-only in-memory database standing in for a disposable engine. -->
     <dependency>
@@ -132,6 +137,47 @@
         <configuration>
           <excludedGroups>oracle_integration,postgresql_integration</excludedGroups>
         </configuration>
+      </plugin>
+
+      <!-- Folder distribution (DEC-008): bin/ launchers and lib/ jars, as zip, tar.gz and a folder. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-assembly-plugin</artifactId>
+        <version>3.7.1</version>
+        <configuration>
+          <descriptors>
+            <descriptor>src/assembly/dist.xml</descriptor>
+          </descriptors>
+        </configuration>
+        <executions>
+          <execution>
+            <id>distribution</id>
+            <phase>package</phase>
+            <goals>
+              <goal>single</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Runs *IT classes after packaging, against the generated distribution folder. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <version>3.5.2</version>
+        <configuration>
+          <systemPropertyVariables>
+            <idb.dist>${project.build.directory}/${project.build.finalName}-dist/${project.build.finalName}</idb.dist>
+          </systemPropertyVariables>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
       </plugin>
 
       <plugin>

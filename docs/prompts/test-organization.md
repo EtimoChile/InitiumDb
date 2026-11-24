@@ -21,3 +21,4 @@ Contract-to-class map (extend as contracts are defined):
 |---|---|
 | README > Initialization (`idb-init`) | `ProjectInitializationTest` |
 | README > Local secrets (`idb-crypt`) | `SecretEncryptionTest` |
+| README > Installation (launchers, `lib/`) | `DistributionIT` (Failsafe, runs after `package` in `mvn verify`) |

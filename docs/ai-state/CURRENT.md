@@ -5,5 +5,7 @@
 - Engines: `oracle` and `postgresql` as thin profiles (DEC-004); object names exact, SQL by engine rules (DEC-005).
 - `idb-capture` rejects table or column names that are not valid XML names (PEND-006 tracks encoding them).
 - Tooling: Maven, JUnit 5, AssertJ, Mockito 5.20.0 with byte-buddy 1.17.7 (needed on Java 25), Testcontainers 2.0.2, Spotless (google-java-format 1.28.0), `-Xlint:all -Werror`, pre-commit.
-- Verified on JDK 25.0.2 (`C:\Util\Java\jdk-25.0.2`; the default `JAVA_HOME` is JDK 1.7, so set it explicitly): `mvn verify` (56 tests) and `mvn spotless:check` pass.
+- Verified on JDK 25.0.2 (`C:\Util\Java\jdk-25.0.2`; the default `JAVA_HOME` is JDK 1.7, so set it explicitly): `mvn verify` (59 unit tests, 3 `DistributionIT`) and `mvn spotless:check` pass.
+- JDBC drivers are user-supplied (`drivers/` folder, DEC-008).
+- Packaging: `mvn package` builds the folder distribution and archives (DEC-008); `DistributionIT` (Failsafe, in `mvn verify`) runs the launchers; the shell launchers were checked on Git Bash only, not on a real Unix.
 - Opt-in integration tests against disposable containers (Docker required): `-Ppostgresql-integration` and `-Poracle-integration`, 2 tests each, both pass.

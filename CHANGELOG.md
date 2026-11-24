@@ -10,3 +10,5 @@
 - Add per-engine profiles for Oracle and PostgreSQL.
 - Run `idb-prepare` SQL hooks in autocommit and apply the dataset in a single transaction.
 - Keep semicolons inside double-quoted identifiers when splitting SQL hooks.
+- Package the four commands as a folder distribution (zip, tar.gz) with launcher scripts.
+- JDBC drivers are not bundled; users place them in `drivers/`, and a missing driver gives a clear error.

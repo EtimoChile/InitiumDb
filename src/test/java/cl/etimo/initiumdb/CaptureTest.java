@@ -139,6 +139,23 @@ class CaptureTest {
   }
 
   @Test
+  void captureExplainsWhereToPutAMissingJdbcDriverWithoutPrintingTheUrl() {
+    // Spec: README.md > Installation (JDBC drivers are provided by the user)
+    // Given: a JDBC URL whose driver is not on the classpath
+    String url = "jdbc:nodriver://secret-host:1521/service";
+    fx.writeEnvironment(
+        "version: 1\nenvironment: dev\ndatabases:\n  CRM:\n    engine: postgresql\n    jdbcUrl: \""
+            + url
+            + "\"\n    username: \"sa\"\n    credential: \"crm\"\n");
+    // When
+    CliRun run = fx.capture();
+    // Then
+    assertThat(run.exitCode()).isEqualTo(1);
+    assertThat(run.err()).contains("No JDBC driver").contains("'drivers' folder");
+    assertThat(run.out() + run.err()).doesNotContain("secret-host");
+  }
+
+  @Test
   void captureFailsWhenNoCredentialIsAvailable() {
     // Spec: README.md > Local secrets
     // When: no env var and no secrets file
