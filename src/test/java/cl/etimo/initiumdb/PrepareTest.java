@@ -238,12 +238,14 @@ class PrepareTest {
   void aFailingPostSqlKeepsTheDatasetAlreadyApplied() {
     // Spec: README.md > idb-prepare (hooks run in autocommit; failure stops the run)
     // Given
-    fx.write("CRM.post.sql", "UPDATE NO_SUCH_TABLE SET X = 1;");
+    fx.write(
+        "CRM.post.sql", "-- first a comment\n/* and a block */\nUPDATE NO_SUCH_TABLE SET X = 1;");
     // When
     CliRun run = fx.prepare();
     // Then
     assertThat(run.exitCode()).isEqualTo(1);
     assertThat(run.err()).contains("post hook statement 1 failed").contains("UPDATE NO_SUCH_TABLE");
+    assertThat(run.err()).contains("[SQL: UPDATE NO_SUCH_TABLE SET X = 1]");
     assertThat(fx.value("SELECT COUNT(*) FROM CUSTOMER")).isEqualTo("2");
   }
 

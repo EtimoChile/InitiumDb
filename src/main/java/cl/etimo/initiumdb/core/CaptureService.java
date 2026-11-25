@@ -31,6 +31,11 @@ public final class CaptureService {
 
   private static final int FETCH_SIZE = 1000;
 
+  /** Comments before the code of a statement say nothing about why it failed. */
+  private static final java.util.regex.Pattern LEADING_COMMENTS =
+      java.util.regex.Pattern.compile(
+          "\\A(\\s*(--[^\\r\\n]*|/\\*.*?\\*/))*\\s*", java.util.regex.Pattern.DOTALL);
+
   private CaptureService() {}
 
   /** Runs every step in order and stops at the first failure. */
@@ -187,7 +192,8 @@ public final class CaptureService {
 
   /** A SQL failure that names what was running and the statement itself (trusted project SQL). */
   static InitiumDbException failed(String what, String sql, SQLException e) {
-    String oneLine = sql.strip().replaceAll("\s+", " ");
+    String code = LEADING_COMMENTS.matcher(sql).replaceFirst("");
+    String oneLine = (code.isBlank() ? sql : code).strip().replaceAll("\\s+", " ");
     if (oneLine.length() > 500) {
       oneLine = oneLine.substring(0, 500) + "...";
     }
