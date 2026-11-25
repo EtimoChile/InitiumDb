@@ -55,12 +55,19 @@ class PrepareMemoryTest {
     command.add("cl.etimo.initiumdb.cli.IdbPrepare");
     command.addAll(List.of(fx.prepareArgs()));
     ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true);
+    // The output goes to a file so that the timeout below applies even if the child hangs
+    Path log = tmp.resolve("prepare.log");
+    builder.redirectOutput(log.toFile());
     builder.environment().putAll(fx.env);
     builder.environment().put("USERPROFILE", tmp.toString());
     builder.environment().put("HOME", tmp.toString());
     Process process = builder.start();
-    String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-    assertThat(process.waitFor(5, TimeUnit.MINUTES)).as("finished").isTrue();
+    boolean finished = process.waitFor(5, TimeUnit.MINUTES);
+    if (!finished) {
+      process.destroyForcibly();
+    }
+    String output = Files.readString(log, StandardCharsets.UTF_8);
+    assertThat(finished).as("finished within 5 minutes: " + output).isTrue();
     // Then
     assertThat(process.exitValue()).as(output).isZero();
     assertThat(count(url)).isEqualTo(ROWS);
