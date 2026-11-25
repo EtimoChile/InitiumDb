@@ -8,6 +8,8 @@ import static org.mockito.Mockito.when;
 import cl.etimo.initiumdb.db.DatabaseEngine;
 import cl.etimo.initiumdb.db.Engines;
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
@@ -26,8 +28,16 @@ class SessionSchemaTest {
               executed.add(invocation.getArgument(0));
               return true;
             });
+    // PostgreSQL checks that the schema exists, so the double lists the ones the tests use
+    java.util.Iterator<String> names = List.of("Crm Owner", "x\"; DROP TABLE t; --").iterator();
+    ResultSet schemas = mock(ResultSet.class);
+    when(schemas.next()).thenAnswer(invocation -> names.hasNext());
+    when(schemas.getString("TABLE_SCHEM")).thenAnswer(invocation -> names.next());
+    DatabaseMetaData metaData = mock(DatabaseMetaData.class);
+    when(metaData.getSchemas()).thenReturn(schemas);
     Connection connection = mock(Connection.class);
     when(connection.createStatement()).thenReturn(statement);
+    when(connection.getMetaData()).thenReturn(metaData);
     return connection;
   }
 
@@ -54,6 +64,19 @@ class SessionSchemaTest {
     // Given / When / Then
     assertThat(useSchema("postgresql", "x\"; DROP TABLE t; --"))
         .containsExactly("SET search_path TO \"x\"\"; DROP TABLE t; --\"");
+  }
+
+  @Test
+  void aPostgresqlSchemaThatDoesNotExistIsRejectedWithItsName() throws SQLException {
+    // Spec: README.md > "SQL identifiers and quoting" (names are case-sensitive)
+    // Given / When / Then
+    List<String> executed = new ArrayList<>();
+    DatabaseEngine target = Engines.named("postgresql");
+    Connection connection = recordingConnection(executed);
+    org.assertj.core.api.Assertions.assertThatThrownBy(
+            () -> target.useSchema(connection, "crm owner"))
+        .hasMessageContaining("Schema 'crm owner' does not exist");
+    assertThat(executed).isEmpty();
   }
 
   @Test

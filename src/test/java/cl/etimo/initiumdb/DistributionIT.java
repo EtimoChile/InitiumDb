@@ -95,7 +95,7 @@ class DistributionIT {
             tmp.resolve("project").toString(),
             "--environment",
             "dev",
-            "--database",
+            "--alias",
             "CRM",
             "--config-dir",
             tmp.resolve("cfg").toString());

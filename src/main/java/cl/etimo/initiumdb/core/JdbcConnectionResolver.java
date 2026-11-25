@@ -20,6 +20,12 @@ public final class JdbcConnectionResolver implements ConnectionResolver {
   public Connection resolve(String environmentName, String databaseAlias) throws SQLException {
     DatabaseSettings settings = environment.database(databaseAlias);
     String password = credentials.password(settings.credential());
+    if (!settings.jdbcUrl().startsWith("jdbc:")) {
+      throw new InitiumDbException(
+          "The jdbcUrl of database '"
+              + databaseAlias
+              + "' must start with 'jdbc:' (for example jdbc:postgresql://host/db).");
+    }
     try {
       return DriverManager.getConnection(settings.jdbcUrl(), settings.username(), password);
     } catch (SQLException e) {

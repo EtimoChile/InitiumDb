@@ -250,7 +250,7 @@ public final class PrepareService {
     }
   }
 
-  private static String seconds(long nanos) {
+  static String seconds(long nanos) {
     return String.format(java.util.Locale.ROOT, "%.2f s", nanos / 1e9);
   }
 

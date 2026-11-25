@@ -63,20 +63,18 @@ The launchers use `JAVA_HOME` when it is set and otherwise `java` from the `PATH
 
 To release from `main` (for example `0.3.0`):
 
-1. Merge `development` into `main`.
-2. On `main`, set the version and commit it: `mvn versions:set -DnewVersion=0.3.0 -DgenerateBackupPoms=false`, then `git commit -am "Release 0.3.0"`.
-3. Tag and push: `git tag v0.3.0 && git push origin main v0.3.0`.
+1. Rename the `Unreleased` heading of `CHANGELOG.md` to the version being released and commit it on `development`.
+2. On a branch `release/0.3.0` cut from `development`, set the version and commit it: `mvn versions:set -DnewVersion=0.3.0 -DgenerateBackupPoms=false`, then `git commit -am "Release 0.3.0"`. `main` is protected: push the branch and merge it with a pull request, using a merge commit (not squash) so the tag stays on `main`.
+3. After the merge, tag the merge commit on `main` and push the tag: `git tag v0.3.0 && git push origin v0.3.0`.
 4. The `Release` workflow (`.github/workflows/release.yml`) checks that the tag equals the pom version, runs `mvn clean verify` and publishes the GitHub release with the archives and `SHA256SUMS`.
 5. Back on `development`, merge `main` and move to the next snapshot: `mvn versions:set -DnewVersion=0.4.0-SNAPSHOT -DgenerateBackupPoms=false`.
-
-Before step 2, rename the `Unreleased` heading of `CHANGELOG.md` to the version being released.
 
 ## Commands
 
 ```bash
 idb-capture --case path/to/testdata/regression --environment dev [--config-dir dir]
 idb-prepare --case path/to/testdata/regression --environment qa [--config-dir dir] [--refresh optimized|dbunit]
-idb-init --case path/to/testdata/regression --environment dev --database CRM [--database postgresql:BILLING ...] [--engine oracle|postgresql] [--config-dir dir]
+idb-init --case path/to/testdata/regression --environment dev --alias CRM [--alias postgresql:BILLING ...] [--engine oracle|postgresql] [--config-dir dir]
 idb-crypt --environment dev [--case path/to/testdata/regression] [--config-dir dir]
 ```
 
@@ -96,7 +94,7 @@ Every command accepts `--help` (or `-h`), which prints its usage, and `--version
 
 `idb-capture` does not construct the test scenario: the developer has already prepared the desired data. Captured datasets must be reviewed before committing them to Git; **InitiumDb does not automatically anonymize or mask data**.
 
-Rows are streamed from the database straight into a temporary file (`.idb-capture-*.tmp`, next to the dataset) and never held in memory; no extra query is run to count them. Each table is reported with its row count when it finishes. The temporary file replaces the dataset only when every table succeeded, so a failed or interrupted capture keeps the previous dataset.
+Rows are streamed from the database straight into a temporary file (`.idb-capture-*.tmp`, next to the dataset) and never held in memory; no extra query is run to count them. Each table is reported with its row count and elapsed time when it finishes (`CUSTOMER: 120 row(s) in 0.42 s`), followed by the alias line (`Alias GL (dev) 1 of 2: captured 6 table(s) into ... in 3.10 s`). The temporary file replaces the dataset only when every table succeeded, so a failed or interrupted capture keeps the previous dataset.
 
 ### `idb-prepare`
 
@@ -113,6 +111,8 @@ The initial dataset operation is DBUnit **`REFRESH`**: update matching rows and 
 On **Oracle** and **PostgreSQL**, DBUnit's `REFRESH` would cost two round trips per row (a `SELECT COUNT(*)` and then an `UPDATE` or `INSERT`), so those profiles apply the same semantics with one upsert per row sent in JDBC batches of 500 (`MERGE` on Oracle, `INSERT ... ON CONFLICT DO UPDATE` on PostgreSQL), matching rows by the primary key read from the database (a table without a primary key is rejected). One difference: an attribute missing from a row means `NULL` (Flat XML does not write nulls) and overwrites the stored value, where `REFRESH` would leave it unchanged. Tables with LOB or engine-specific column types are applied with DBUnit's own `REFRESH`. `--refresh dbunit` forces DBUnit's original `REFRESH` on every engine (the default, `--refresh optimized`, uses the engine's faster operation when it has one), which allows comparing both. The output reports elapsed time per hook, per table, for the whole dataset (with the operation used) and per alias; the per-table time includes applying its rows, because the file is read as fast as the database accepts it.
 
 SQL hooks (`<ALIAS>.pre.sql`, `<ALIAS>.post.sql`) run in **autocommit**, exactly as written: each statement is committed as it runs, and a hook that contains its own `COMMIT`, `ROLLBACK` or DDL behaves as the engine defines. The dataset is applied in **one short transaction** (all or nothing), because DBUnit issues its statements row by row and autocommit would otherwise commit once per row. Nothing is rolled back across hooks, the dataset or steps: a failure stops the run, previously committed changes remain, and there is **no distributed transaction**. Re-running the entire `idb-prepare` command is the recovery strategy, so SQL hooks must be **idempotent**, or guarded so that a repeat does nothing (see [Conditional statements](#conditional-statements)): for example `DELETE` then `INSERT`, `MERGE`, or `TRUNCATE`; avoid relative updates such as `balance = balance + 100` and statements that advance sequences.
+
+**Interrupting a run leaves the data half-prepared.** The pre hook commits statement by statement before the dataset transaction starts, so if the command is killed (Ctrl+C, a lost connection, a timeout) or fails after the pre hook, the rows it deleted stay deleted and the dataset is rolled back. The tables are then empty or incomplete, not back to their earlier state. Run the whole `idb-prepare` command again to restore them. For the same reason, do not point a test or a measurement at a shared database without being ready to run `idb-prepare` to completion afterwards.
 
 **SQL hooks are plain SQL, by design.** A hook script is a sequence of SQL statements, each ending in `;`. InitiumDb does not run procedural blocks (PL/SQL, `DO $$ ... $$`): it is not a scripting runtime, and hooks stay declarative and comparable across engines. Repeatability comes from writing idempotent statements, not from procedural logic. Comments (`-- ...`, `/* ... */`, including optimizer hints such as `/*+ ... */`) are sent to the database exactly as written and never split a statement; a script made only of comments is valid and runs nothing. A hook file that is absent or empty runs nothing.
 
@@ -286,10 +286,10 @@ The built-in resolver reads each password from the `IDB_CREDENTIAL_<NAME>` envir
 ### Initialization
 
 ```bash
-idb-init --case path/to/testdata/regression --environment dev --database CRM [--database postgresql:BILLING ...] [--engine oracle|postgresql] [--config-dir dir]
+idb-init --case path/to/testdata/regression --environment dev --alias CRM [--alias postgresql:BILLING ...] [--engine oracle|postgresql] [--config-dir dir]
 ```
 
-Initialization is **cumulative and never overwrites**. `--database [ENGINE:]NAME` is repeatable (at least one). `NAME` is converted to upper case and may use letters, digits and `_`; `ENGINE` is `oracle` or `postgresql` (case-insensitive) and defaults to `--engine` (default `oracle`). `--case` is the case directory. For each database it ensures an entry `- alias: NAME` in `case.yml`, and, in the case directory, a `<NAME>.queries.yml` template and empty `<NAME>.pre.sql` and `<NAME>.post.sql` hook files (`idb-prepare` accepts empty hooks; the files are created when missing even if the database was already in the case), and in the configuration directory an entry in `<environment>.yml` (engine and a JDBC URL placeholder for that engine) and an empty entry in `<environment>.secrets.json` (for example `{"CRM": ""}`). Files that do not exist are created; files that exist only receive the databases they do not contain yet; an existing database entry, query file or secret is never modified. Case, environment and queries files are read and written with a YAML library and the secrets file with a JSON library, never as text: a rewritten YAML file keeps its content and key order but **not its comments or layout**. If an existing file cannot be read or extended (for example the environment file declares another environment, or `databases` in the case is not a list) nothing is written. The command reports each file as Created, Updated or Unchanged. It also creates the master key if it does not exist (see below). Templates contain no credentials.
+Initialization is **cumulative and never overwrites**. `--alias [ENGINE:]NAME` is repeatable (at least one). `NAME` is converted to upper case and may use letters, digits and `_`; `ENGINE` is `oracle` or `postgresql` (case-insensitive) and defaults to `--engine` (default `oracle`). `--case` is the case directory. For each database it ensures an entry `- alias: NAME` in `case.yml`, and, in the case directory, a `<NAME>.queries.yml` template and empty `<NAME>.pre.sql` and `<NAME>.post.sql` hook files (`idb-prepare` accepts empty hooks; the files are created when missing even if the database was already in the case), and in the configuration directory an entry in `<environment>.yml` (engine and a JDBC URL placeholder for that engine) and an empty entry in `<environment>.secrets.json` (for example `{"CRM": ""}`). Files that do not exist are created; files that exist only receive the databases they do not contain yet; an existing database entry, query file or secret is never modified. Case, environment and queries files are read and written with a YAML library and the secrets file with a JSON library, never as text: a rewritten YAML file keeps its content and key order but **not its comments or layout**. If an existing file cannot be read or extended (for example the environment file declares another environment, or `databases` in the case is not a list) nothing is written. The command reports each file as Created, Updated or Unchanged. It also creates the master key if it does not exist (see below). Templates contain no credentials.
 
 The configuration directory defaults to `~/.initiumdb`. The environment name accepts letters, digits, `_` and `-`.
 
