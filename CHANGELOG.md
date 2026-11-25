@@ -4,6 +4,7 @@
 
 - A `jdbcUrl` that does not start with `jdbc:` now fails with a clear message instead of a misleading "No JDBC driver found".
 - On PostgreSQL, a `schema` that does not exist fails with "Schema ... does not exist" instead of a later "relation does not exist".
+- README states that interrupting `idb-prepare` after the pre hook leaves the data half-prepared and that re-running it is the recovery.
 - `idb-capture` reports elapsed time per table and per alias.
 - **Breaking:** `idb-init` option `--database` is now `--alias`, matching the `alias` of `case.yml`.
 
