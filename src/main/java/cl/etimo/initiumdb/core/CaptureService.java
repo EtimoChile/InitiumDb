@@ -25,7 +25,7 @@ import org.dbunit.dataset.xml.FlatXmlWriter;
 
 /**
  * Implements {@code idb-capture}: runs the configured {@code SELECT}s in declared order and writes
- * a DBUnit Flat XML dataset per step. Data is not masked or anonymized.
+ * a DBUnit Flat XML dataset per alias. Data is not masked or anonymized.
  */
 public final class CaptureService {
 
@@ -38,7 +38,7 @@ public final class CaptureService {
 
   private CaptureService() {}
 
-  /** Runs every step in order and stops at the first failure. */
+  /** Runs every alias in order and stops at the first failure. */
   public static void run(
       CaseConfig caseConfig,
       EnvironmentConfig environment,
@@ -47,7 +47,15 @@ public final class CaptureService {
     int index = 0;
     for (DatabaseStep step : caseConfig.databases()) {
       index++;
-      String label = "Step " + index + " (" + step.alias() + ")";
+      String label =
+          "Alias "
+              + step.alias()
+              + " ("
+              + environment.environment()
+              + ") "
+              + index
+              + " of "
+              + caseConfig.databases().size();
       try {
         int tables = captureStep(step, environment, resolver, out);
         out.println(label + ": captured " + tables + " table(s) into " + step.dataset());

@@ -22,15 +22,23 @@ final class DataCommand {
         CaseConfig caseConfig,
         EnvironmentConfig environment,
         ConnectionResolver resolver,
-        PrintStream out);
+        PrintStream out,
+        CliArgs cli);
   }
 
   private DataCommand() {}
+
+  private static Set<String> options(Set<String> extra) {
+    Set<String> all = new java.util.HashSet<>(Set.of("--case", "--environment", "--config-dir"));
+    all.addAll(extra);
+    return all;
+  }
 
   /** Parses arguments, loads configuration and runs {@code action}; returns the exit code. */
   static int run(
       String name,
       String usage,
+      Set<String> extraOptions,
       Action action,
       String[] args,
       Map<String, String> env,
@@ -42,8 +50,7 @@ final class DataCommand {
       return 0;
     }
     try {
-      CliArgs cli =
-          CliArgs.parse(args, Set.of("--case", "--environment", "--config-dir"), Set.of());
+      CliArgs cli = CliArgs.parse(args, options(extraOptions), Set.of());
       String configDir = cli.value("--config-dir");
       ConfigLayout layout =
           ConfigLayout.of(
@@ -64,7 +71,7 @@ final class DataCommand {
                   () -> MasterKey.load(env, homeDir),
                   () -> MasterKey.loadOrCreate(env, homeDir),
                   message -> err.println(name + ": " + message)));
-      action.run(caseConfig, environment, resolver, out);
+      action.run(caseConfig, environment, resolver, out, cli);
       return 0;
     } catch (InitiumDbException e) {
       err.println(name + ": " + e.getMessage());

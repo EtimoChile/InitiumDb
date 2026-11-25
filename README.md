@@ -48,7 +48,7 @@ Unpack an archive anywhere and put `bin/` on the `PATH`. The launchers use `JAVA
 
 ```bash
 idb-capture --case path/to/testdata/regression --environment dev [--config-dir dir]
-idb-prepare --case path/to/testdata/regression --environment qa [--config-dir dir]
+idb-prepare --case path/to/testdata/regression --environment qa [--config-dir dir] [--refresh optimized|dbunit]
 idb-init --case path/to/testdata/regression --environment dev --database CRM [--database postgresql:BILLING ...] [--engine oracle|postgresql] [--config-dir dir]
 idb-crypt --environment dev [--case path/to/testdata/regression] [--config-dir dir]
 ```
@@ -76,12 +76,14 @@ Rows are streamed from the database straight into a temporary file (`.idb-captur
 1. Read the case definition and the selected environment configuration.
 2. Resolve each logical database alias and its credentials.
 3. Process the configured database steps sequentially.
-4. For each step, run the optional hook `<ALIAS>.pre.sql`, apply the dataset, then run the optional hook `<ALIAS>.post.sql`.
-5. Exit successfully only if every step completes.
+4. For each alias, run the optional hook `<ALIAS>.pre.sql`, apply the dataset, then run the optional hook `<ALIAS>.post.sql`.
+5. Exit successfully only if every alias completes.
 
-The dataset is read as a stream and never held fully in memory, so a malformed XML file is detected when the reader reaches it, after the pre hook has run. Progress is printed as it happens: the statements run by each hook (`pre hook: 3 of 4 statement(s) run`, guards excluded from the count) and each table with its row count (`CUSTOMER: 120 row(s)`), followed by the step line. No query is run to count rows.
+The dataset is read as a stream and never held fully in memory, so a malformed XML file is detected when the reader reaches it, after the pre hook has run. Progress is printed as it happens: the statements run by each hook (`pre hook: 3 of 4 statement(s) run`, guards excluded from the count) and each table with its row count (`CUSTOMER: 120 row(s)`), followed by the alias line (`Alias GL (dev) 1 of 2: prepared from ... in 13.37 s`; the environment name is shown, never the JDBC URL). No query is run to count rows.
 
 The initial dataset operation is DBUnit **`REFRESH`**: update matching rows and insert missing rows according to DBUnit's key matching. `REFRESH` **does not delete unrelated or extra rows**, so `idb-prepare` does not promise to restore an entire database or table to an exact snapshot. Optional SQL hooks can perform case-specific cleanup when needed.
+
+On **Oracle**, DBUnit's `REFRESH` would cost two round trips per row (a `SELECT COUNT(*)` and then an `UPDATE` or `INSERT`), so the Oracle profile applies the same semantics with a `MERGE` per row sent in JDBC batches of 500, matching rows by the primary key read from the database (a table without a primary key is rejected). One difference: an attribute missing from a row means `NULL` (Flat XML does not write nulls) and overwrites the stored value, where `REFRESH` would leave it unchanged. Tables with LOB or engine-specific column types are applied with DBUnit's own `REFRESH`. `--refresh dbunit` forces DBUnit's original `REFRESH` on every engine (the default, `--refresh optimized`, uses the engine's faster operation when it has one), which allows comparing both. The output reports elapsed time per hook, per table, for the whole dataset (with the operation used) and per alias; the per-table time includes applying its rows, because the file is read as fast as the database accepts it.
 
 SQL hooks (`<ALIAS>.pre.sql`, `<ALIAS>.post.sql`) run in **autocommit**, exactly as written: each statement is committed as it runs, and a hook that contains its own `COMMIT`, `ROLLBACK` or DDL behaves as the engine defines. The dataset is applied in **one short transaction** (all or nothing), because DBUnit issues its statements row by row and autocommit would otherwise commit once per row. Nothing is rolled back across hooks, the dataset or steps: a failure stops the run, previously committed changes remain, and there is **no distributed transaction**. Re-running the entire `idb-prepare` command is the recovery strategy, so SQL hooks must be **idempotent**, or guarded so that a repeat does nothing (see [Conditional statements](#conditional-statements)): for example `DELETE` then `INSERT`, `MERGE`, or `TRUNCATE`; avoid relative updates such as `balance = balance + 100` and statements that advance sequences.
 
@@ -102,7 +104,7 @@ UPDATE app.customer SET status = 'ACTIVE' WHERE customer_id = 1001;
 - `-- idb:run-if <query>` runs the next statement only if the query returns at least one row; `-- idb:skip-if <query>` runs it only if the query returns none. The query is the rest of the line (a trailing `;` is optional) and is run in autocommit like any hook statement.
 - A directive applies to **one** statement, the next one. There is no nesting, `else` or procedural logic (see above). Statements without a directive always run.
 - The directive line is not sent to the database. Every other comment keeps no special meaning, including block comments, and the file remains valid SQL for other tools, which simply ignore the directive.
-- To keep a typo from silently running a statement that was meant to be conditional, a `-- idb:` comment must be a valid directive: an unknown name, a missing query, two directives for one statement, a directive after the statement has begun or a directive with no statement after it fail the run before any hook of that step runs.
+- To keep a typo from silently running a statement that was meant to be conditional, a `-- idb:` comment must be a valid directive: an unknown name, a missing query, two directives for one statement, a directive after the statement has begun or a directive with no statement after it fail the run before any hook of that alias runs.
 
 
 ## Example repository layout
@@ -260,7 +262,7 @@ The built-in resolver reads each password from the `IDB_CREDENTIAL_<NAME>` envir
 idb-init --case path/to/testdata/regression --environment dev --database CRM [--database postgresql:BILLING ...] [--engine oracle|postgresql] [--config-dir dir]
 ```
 
-Initialization is **cumulative and never overwrites**. `--database [ENGINE:]NAME` is repeatable (at least one). `NAME` is converted to upper case and may use letters, digits and `_`; `ENGINE` is `oracle` or `postgresql` (case-insensitive) and defaults to `--engine` (default `oracle`). `--case` is the case directory. For each database it ensures a step `- alias: NAME` in `case.yml`, and, in the case directory, a `<NAME>.queries.yml` template and empty `<NAME>.pre.sql` and `<NAME>.post.sql` hook files (`idb-prepare` accepts empty hooks; the files are created when missing even if the database was already in the case), and in the configuration directory an entry in `<environment>.yml` (engine and a JDBC URL placeholder for that engine) and an empty entry in `<environment>.secrets.json` (for example `{"CRM": ""}`). Files that do not exist are created; files that exist only receive the databases they do not contain yet; an existing database entry, query file or secret is never modified. Case, environment and queries files are read and written with a YAML library and the secrets file with a JSON library, never as text: a rewritten YAML file keeps its content and key order but **not its comments or layout**. If an existing file cannot be read or extended (for example the environment file declares another environment, or `databases` in the case is not a list) nothing is written. The command reports each file as Created, Updated or Unchanged. It also creates the master key if it does not exist (see below). Templates contain no credentials.
+Initialization is **cumulative and never overwrites**. `--database [ENGINE:]NAME` is repeatable (at least one). `NAME` is converted to upper case and may use letters, digits and `_`; `ENGINE` is `oracle` or `postgresql` (case-insensitive) and defaults to `--engine` (default `oracle`). `--case` is the case directory. For each database it ensures an entry `- alias: NAME` in `case.yml`, and, in the case directory, a `<NAME>.queries.yml` template and empty `<NAME>.pre.sql` and `<NAME>.post.sql` hook files (`idb-prepare` accepts empty hooks; the files are created when missing even if the database was already in the case), and in the configuration directory an entry in `<environment>.yml` (engine and a JDBC URL placeholder for that engine) and an empty entry in `<environment>.secrets.json` (for example `{"CRM": ""}`). Files that do not exist are created; files that exist only receive the databases they do not contain yet; an existing database entry, query file or secret is never modified. Case, environment and queries files are read and written with a YAML library and the secrets file with a JSON library, never as text: a rewritten YAML file keeps its content and key order but **not its comments or layout**. If an existing file cannot be read or extended (for example the environment file declares another environment, or `databases` in the case is not a list) nothing is written. The command reports each file as Created, Updated or Unchanged. It also creates the master key if it does not exist (see below). Templates contain no credentials.
 
 The configuration directory defaults to `~/.initiumdb`. The environment name accepts letters, digits, `_` and `-`.
 
@@ -295,7 +297,7 @@ Test results
 
 The CI server invokes InitiumDb as a separate command. Playwright tests do not need to import InitiumDb or call its API. `idb-prepare` is executed **once before the configured suite**, rather than between individual tests.
 
-If `idb-prepare` exits with a nonzero status, the pipeline should fail that step and not proceed to E2E tests.
+If `idb-prepare` exits with a nonzero status, the pipeline should fail that stage and not proceed to E2E tests.
 
 ## Runtime and database support
 
@@ -313,10 +315,10 @@ Engine-specific behavior is isolated in a thin per-engine profile (DBUnit data t
 
 - Commands execute sequentially and stop on failure.
 - Successful execution returns exit code `0`; any failure returns `1`.
-- Logs identify the case, environment, database alias, current step and error cause without revealing credentials.
+- Logs identify the case, environment, database alias, current alias (with its position) and error cause without revealing credentials.
 - There is no dedicated `validate` command, `--mode` switch, preview mode, persistent status table or execution checkpoint.
 - Input validation occurs naturally when commands read configuration and files; invalid input fails the command.
-- Re-running `idb-prepare` starts from the first configured step, even if a prior run partially completed.
+- Re-running `idb-prepare` starts from the first configured alias, even if a prior run partially completed.
 - Repeatability depends on the configured dataset and SQL hooks. SQL hooks that are not idempotent can prevent safe reruns.
 
 ## Limitations

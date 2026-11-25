@@ -5,6 +5,9 @@
 - Project bootstrap (Java 25, Maven).
 - Add `idb-init` and `idb-crypt` commands.
 - `idb-capture` and `idb-prepare` encrypt cleartext secrets in place when they find them (previously they failed asking for `idb-crypt`).
+- Logs and errors say `Alias GL (dev) 1 of 2` instead of `Step 1 (GL)`.
+- `idb-prepare` reports elapsed time per hook, table, dataset and alias, and `--refresh dbunit` forces DBUnit's original `REFRESH` (default `--refresh optimized`).
+- On Oracle, `idb-prepare` applies the dataset with batched `MERGE` statements instead of DBUnit's row-by-row `REFRESH` (a missing attribute is stored as `NULL`).
 - Add `idb-capture` and `idb-prepare` commands (DBUnit Flat XML, `REFRESH`, declared table order) with an environment-variable and encrypted-secrets credential provider.
 - Use object names (schema, tables) exactly as written, quote the session schema, and let the engine interpret SQL; generate quoted SQL for dataset operations.
 - SQL failures now name the table query, hook statement or guard that failed and show its SQL (queries and hooks are trusted project files).

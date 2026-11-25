@@ -19,7 +19,7 @@ public record CaseConfig(String name, Path dir, List<DatabaseStep> databases) {
   public static final String FILE = "case.yml";
 
   /**
-   * One database step. Every path is the conventional one; the file may not exist (hooks are
+   * One alias of the case. Every path is the conventional one; the file may not exist (hooks are
    * skipped when absent, and capture or prepare reports a missing queries or dataset file).
    */
   public record DatabaseStep(String alias, Path queries, Path dataset, Path preSql, Path postSql) {}

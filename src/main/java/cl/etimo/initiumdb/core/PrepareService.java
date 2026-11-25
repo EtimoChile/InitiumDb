@@ -37,21 +37,65 @@ import org.xml.sax.InputSource;
  */
 public final class PrepareService {
 
+  /** Which operation applies the dataset. */
+  public enum RefreshMode {
+    /** The engine's faster operation when it has one, DBUnit's {@code REFRESH} otherwise. */
+    OPTIMIZED,
+    /** Always DBUnit's own {@code REFRESH}, row by row. */
+    DBUNIT;
+
+    /** {@code null} means the default, {@link #OPTIMIZED}. */
+    public static RefreshMode parse(String value) {
+      if (value == null || value.equals("optimized")) {
+        return OPTIMIZED;
+      }
+      if (value.equals("dbunit")) {
+        return DBUNIT;
+      }
+      throw new InitiumDbException(
+          "Unknown --refresh value '" + value + "' (expected optimized or dbunit).");
+    }
+  }
+
   private PrepareService() {}
 
-  /** Runs every step in order and stops at the first failure. */
+  /** Runs every alias in order with the default refresh mode. */
   public static void run(
       CaseConfig caseConfig,
       EnvironmentConfig environment,
       ConnectionResolver resolver,
       PrintStream out) {
+    run(caseConfig, environment, resolver, out, RefreshMode.OPTIMIZED);
+  }
+
+  /** Runs every alias in order and stops at the first failure. */
+  public static void run(
+      CaseConfig caseConfig,
+      EnvironmentConfig environment,
+      ConnectionResolver resolver,
+      PrintStream out,
+      RefreshMode mode) {
     int index = 0;
     for (DatabaseStep step : caseConfig.databases()) {
       index++;
-      String label = "Step " + index + " (" + step.alias() + ")";
+      String label =
+          "Alias "
+              + step.alias()
+              + " ("
+              + environment.environment()
+              + ") "
+              + index
+              + " of "
+              + caseConfig.databases().size();
       try {
-        prepareStep(step, environment, resolver, out);
-        out.println(label + ": prepared from " + step.dataset());
+        long start = System.nanoTime();
+        prepareStep(step, environment, resolver, out, mode);
+        out.println(
+            label
+                + ": prepared from "
+                + step.dataset()
+                + " in "
+                + seconds(System.nanoTime() - start));
       } catch (InitiumDbException e) {
         throw new InitiumDbException(label + ": " + e.getMessage());
       } catch (SQLException | DatabaseUnitException | IOException e) {
@@ -64,7 +108,8 @@ public final class PrepareService {
       DatabaseStep step,
       EnvironmentConfig environment,
       ConnectionResolver resolver,
-      PrintStream out)
+      PrintStream out,
+      RefreshMode mode)
       throws SQLException, DatabaseUnitException, IOException {
     DatabaseEngine engine = Engines.named(environment.database(step.alias()).engine());
     requireFile(step.dataset(), "Dataset");
@@ -72,13 +117,25 @@ public final class PrepareService {
     List<Statement> post = script(step.postSql());
     String schema =
         Files.isRegularFile(step.queries()) ? QueriesConfig.load(step.queries()).schema() : null;
-    IDataSet dataSet = streamingDataSet(step.dataset(), out);
+    ProgressProducer progress = progressProducer(step.dataset(), out);
+    IDataSet dataSet = new StreamingDataSet(progress);
 
     try (Connection connection = resolver.resolve(environment.environment(), step.alias())) {
       connection.setAutoCommit(true);
       engine.useSchema(connection, schema);
       execute(connection, pre, "pre hook", out);
-      refresh(connection, engine, schema, dataSet);
+      long start = System.nanoTime();
+      DatabaseOperation operation =
+          mode == RefreshMode.DBUNIT ? DatabaseOperation.REFRESH : engine.refreshOperation();
+      refresh(connection, engine, schema, dataSet, operation);
+      out.println(
+          "  dataset: "
+              + progress.total()
+              + " row(s) in "
+              + seconds(System.nanoTime() - start)
+              + " ("
+              + (operation == DatabaseOperation.REFRESH ? "dbunit" : "optimized")
+              + ")");
       execute(connection, post, "post hook", out);
     }
   }
@@ -89,12 +146,16 @@ public final class PrepareService {
    * and all-or-nothing. It contains no user SQL, so no hook can interfere with the boundary.
    */
   private static void refresh(
-      Connection connection, DatabaseEngine engine, String schema, IDataSet dataSet)
+      Connection connection,
+      DatabaseEngine engine,
+      String schema,
+      IDataSet dataSet,
+      DatabaseOperation operation)
       throws SQLException, DatabaseUnitException {
     IDatabaseConnection dbunit = DbUnitSession.open(connection, engine, schema);
     connection.setAutoCommit(false);
     try {
-      DatabaseOperation.REFRESH.execute(dbunit, dataSet);
+      operation.execute(dbunit, dataSet);
       connection.commit();
     } catch (SQLException | DatabaseUnitException | RuntimeException e) {
       rollbackQuietly(connection);
@@ -109,10 +170,10 @@ public final class PrepareService {
    * appear after the first row (null values are not written to Flat XML). Progress is reported per
    * table as its rows go by.
    */
-  private static IDataSet streamingDataSet(Path file, PrintStream out) {
+  private static ProgressProducer progressProducer(Path file, PrintStream out) {
     IDataSetProducer producer =
         new FlatXmlProducer(new InputSource(file.toUri().toString()), false, true, true);
-    return new StreamingDataSet(new ProgressProducer(producer, out));
+    return new ProgressProducer(producer, out);
   }
 
   /** Reports the row count of each table once its last row has been read. */
@@ -123,6 +184,8 @@ public final class PrepareService {
     private IDataSetConsumer consumer;
     private String table;
     private long rows;
+    private long total;
+    private long tableStart;
 
     ProgressProducer(IDataSetProducer delegate, PrintStream out) {
       this.delegate = delegate;
@@ -156,6 +219,7 @@ public final class PrepareService {
       if (!metaData.getTableName().equals(table)) {
         report();
         table = metaData.getTableName();
+        tableStart = System.nanoTime();
       }
       consumer.startTable(metaData);
     }
@@ -168,16 +232,26 @@ public final class PrepareService {
     @Override
     public void row(Object[] values) throws DataSetException {
       rows++;
+      total++;
       consumer.row(values);
+    }
+
+    long total() {
+      return total;
     }
 
     private void report() {
       if (table != null) {
-        out.println("  " + table + ": " + rows + " row(s)");
+        out.println(
+            "  " + table + ": " + rows + " row(s) in " + seconds(System.nanoTime() - tableStart));
       }
       table = null;
       rows = 0;
     }
+  }
+
+  private static String seconds(long nanos) {
+    return String.format(java.util.Locale.ROOT, "%.2f s", nanos / 1e9);
   }
 
   private static void requireFile(Path file, String what) {
@@ -200,6 +274,7 @@ public final class PrepareService {
     if (statements.isEmpty()) {
       return;
     }
+    long start = System.nanoTime();
     int run = 0;
     int skipped = 0;
     for (Statement hook : statements) {
@@ -214,7 +289,15 @@ public final class PrepareService {
       }
       run++;
     }
-    out.println("  " + label + ": " + run + " of " + statements.size() + " statement(s) run");
+    out.println(
+        "  "
+            + label
+            + ": "
+            + run
+            + " of "
+            + statements.size()
+            + " statement(s) run in "
+            + seconds(System.nanoTime() - start));
   }
 
   /** Runs a guard query: {@code run-if} needs a row, {@code skip-if} needs none. */

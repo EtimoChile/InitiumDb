@@ -3,6 +3,7 @@ package cl.etimo.initiumdb.db;
 import java.sql.Connection;
 import java.sql.SQLException;
 import org.dbunit.database.DatabaseConfig;
+import org.dbunit.operation.DatabaseOperation;
 
 /**
  * Engine contract: the minimal engine-specific behavior InitiumDb needs on top of DBUnit. A thin
@@ -22,4 +23,13 @@ public interface DatabaseEngine {
    * {@code null} or blank schema leaves the session unchanged.
    */
   void useSchema(Connection connection, String schema) throws SQLException;
+
+  /**
+   * The operation that applies a dataset by updating matching rows and inserting missing ones.
+   * Defaults to DBUnit's {@code REFRESH}; an engine may replace it with a faster one that gives the
+   * same result.
+   */
+  default DatabaseOperation refreshOperation() {
+    return DatabaseOperation.REFRESH;
+  }
 }

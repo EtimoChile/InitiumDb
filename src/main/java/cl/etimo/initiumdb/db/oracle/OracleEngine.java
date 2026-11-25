@@ -7,6 +7,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import org.dbunit.database.DatabaseConfig;
 import org.dbunit.ext.oracle.Oracle10DataTypeFactory;
+import org.dbunit.operation.DatabaseOperation;
 
 /** Oracle profile. */
 public final class OracleEngine implements DatabaseEngine {
@@ -22,6 +23,11 @@ public final class OracleEngine implements DatabaseEngine {
     config.setProperty(DatabaseConfig.PROPERTY_ESCAPE_PATTERN, "\"?\"");
     config.setProperty(DatabaseConfig.FEATURE_CASE_SENSITIVE_TABLE_NAMES, true);
     config.setProperty(DatabaseConfig.FEATURE_SKIP_ORACLE_RECYCLEBIN_TABLES, true);
+  }
+
+  @Override
+  public DatabaseOperation refreshOperation() {
+    return new OracleMergeOperation();
   }
 
   @Override

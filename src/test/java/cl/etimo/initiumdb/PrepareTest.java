@@ -55,6 +55,49 @@ class PrepareTest {
   }
 
   @Test
+  void prepareReportsTimesForTablesDatasetAndStep() {
+    // Spec: README.md > idb-prepare (timing in the progress output)
+    // When
+    CliRun run = fx.prepare();
+    // Then
+    assertThat(run.exitCode()).as(run.err()).isZero();
+    assertThat(run.out())
+        .containsPattern("CUSTOMER: 2 row\\(s\\) in \\d+\\.\\d\\d s")
+        .containsPattern("dataset: 3 row\\(s\\) in \\d+\\.\\d\\d s \\((dbunit|optimized)\\)")
+        .containsPattern("prepared from .* in \\d+\\.\\d\\d s");
+  }
+
+  @Test
+  void refreshDbunitForcesTheOriginalOperationAndGivesTheSameResult() {
+    // Spec: README.md > idb-prepare (--refresh optimized|dbunit)
+    // Given
+    fx.sql("INSERT INTO CUSTOMER VALUES (1001, 'Old', 'INACTIVE')");
+    String[] args = java.util.Arrays.copyOf(fx.args(), fx.args().length + 2);
+    args[args.length - 2] = "--refresh";
+    args[args.length - 1] = "dbunit";
+    // When
+    CliRun run = CliRun.prepare(fx.env, fx.home, args);
+    // Then
+    assertThat(run.exitCode()).as(run.err()).isZero();
+    assertThat(run.out()).contains("(dbunit)");
+    assertThat(fx.value("SELECT NAME FROM CUSTOMER WHERE CUSTOMER_ID = 1001")).isEqualTo("New One");
+  }
+
+  @Test
+  void refreshRejectsUnknownValues() {
+    // Spec: README.md > idb-prepare (--refresh optimized|dbunit)
+    // Given
+    String[] args = java.util.Arrays.copyOf(fx.args(), fx.args().length + 2);
+    args[args.length - 2] = "--refresh";
+    args[args.length - 1] = "fast";
+    // When
+    CliRun run = CliRun.prepare(fx.env, fx.home, args);
+    // Then
+    assertThat(run.exitCode()).isEqualTo(1);
+    assertThat(run.err()).contains("--refresh").contains("optimized or dbunit");
+  }
+
+  @Test
   void prepareUpdatesMatchingRowsAndInsertsMissingOnes() {
     // Spec: README.md > idb-prepare (REFRESH)
     // Given
@@ -271,7 +314,7 @@ class PrepareTest {
   @Test
   void aFailingStepStopsTheRunButEarlierStepsStayCommitted() {
     // Spec: README.md > idb-prepare (no distributed transaction)
-    // Given: step 1 is valid, step 2 fails
+    // Given: alias 1 is valid, alias 2 fails
     fx.write("BILLING.dataset.xml", DATASET);
     fx.write("BILLING.post.sql", "UPDATE NO_SUCH_TABLE SET X = 1;");
     fx.writeEnvironment(
@@ -287,8 +330,8 @@ class PrepareTest {
     CliRun run = fx.prepare();
     // Then
     assertThat(run.exitCode()).isEqualTo(1);
-    assertThat(run.out()).contains("Step 1 (CRM): prepared");
-    assertThat(run.err()).contains("Step 2 (BILLING)");
+    assertThat(run.out()).contains("Alias CRM (dev) 1 of 2: prepared");
+    assertThat(run.err()).contains("Alias BILLING (dev) 2 of 2");
     assertThat(fx.value("SELECT COUNT(*) FROM CUSTOMER")).isEqualTo("2");
   }
 

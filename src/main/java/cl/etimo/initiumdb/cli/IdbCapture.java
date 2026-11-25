@@ -26,6 +26,16 @@ public final class IdbCapture {
   /** Runs the command and returns the exit code: {@code 0} on success, {@code 1} on failure. */
   public static int run(
       String[] args, Map<String, String> env, Path homeDir, PrintStream out, PrintStream err) {
-    return DataCommand.run("idb-capture", USAGE, CaptureService::run, args, env, homeDir, out, err);
+    return DataCommand.run(
+        "idb-capture",
+        USAGE,
+        java.util.Set.of(),
+        (caseConfig, environment, resolver, stdout, cli) ->
+            CaptureService.run(caseConfig, environment, resolver, stdout),
+        args,
+        env,
+        homeDir,
+        out,
+        err);
   }
 }

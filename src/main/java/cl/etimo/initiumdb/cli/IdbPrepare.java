@@ -9,7 +9,8 @@ import java.util.Map;
 public final class IdbPrepare {
 
   static final String USAGE =
-      "Usage: idb-prepare --case path/to/case-dir --environment qa [--config-dir dir]";
+      "Usage: idb-prepare --case path/to/case-dir --environment qa [--config-dir dir]"
+          + " [--refresh optimized|dbunit]";
 
   private IdbPrepare() {}
 
@@ -26,6 +27,21 @@ public final class IdbPrepare {
   /** Runs the command and returns the exit code: {@code 0} on success, {@code 1} on failure. */
   public static int run(
       String[] args, Map<String, String> env, Path homeDir, PrintStream out, PrintStream err) {
-    return DataCommand.run("idb-prepare", USAGE, PrepareService::run, args, env, homeDir, out, err);
+    return DataCommand.run(
+        "idb-prepare",
+        USAGE,
+        java.util.Set.of("--refresh"),
+        (caseConfig, environment, resolver, stdout, cli) ->
+            PrepareService.run(
+                caseConfig,
+                environment,
+                resolver,
+                stdout,
+                PrepareService.RefreshMode.parse(cli.value("--refresh"))),
+        args,
+        env,
+        homeDir,
+        out,
+        err);
   }
 }
