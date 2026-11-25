@@ -37,6 +37,9 @@ If you discover a bug or unexpected behavior, please open an issue and include:
 Never include credentials, JDBC URLs with secrets, or real data in an issue.
 Clear reports help us resolve issues faster.
 
+For security vulnerabilities do not open an issue; follow [`SECURITY.md`](SECURITY.md).
+This project follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ---
 
 ## Pull Requests
