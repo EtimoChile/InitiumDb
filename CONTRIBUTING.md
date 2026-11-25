@@ -53,6 +53,19 @@ Please ensure that:
 - Tests pass
 - Documentation (`README.md`) and `CHANGELOG.md` are updated when needed
 
+### Review threads
+
+Automated and human reviews leave inline threads that are either open or resolved. Whoever
+fixes a finding replies on its thread (pointing to the fix) and resolves it in the same pull
+request. A finding rejected on purpose is also answered, with the reason, and resolved.
+
+Before a release, verify that no review thread remains open; no output means none does:
+
+```bash
+gh api graphql -f query='query{repository(owner:"EtimoChile",name:"InitiumDb"){pullRequests(first:100,orderBy:{field:CREATED_AT,direction:DESC}){nodes{number reviewThreads(first:100){nodes{isResolved path}}}}}}' \
+  --jq '.data.repository.pullRequests.nodes[] | {pr:.number, open:[.reviewThreads.nodes[]|select(.isResolved|not)|.path]} | select(.open|length>0)'
+```
+
 Small, focused pull requests are preferred. All project content (code,
 documentation, comments, commits, pull requests) is written in English.
 
