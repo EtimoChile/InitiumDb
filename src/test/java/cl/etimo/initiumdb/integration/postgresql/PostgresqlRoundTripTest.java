@@ -139,6 +139,27 @@ class PostgresqlRoundTripTest {
   }
 
   @Test
+  void aPartialDatasetThatOmitsANotNullColumnUpdatesExistingRows() throws Exception {
+    // Spec: README.md > idb-prepare (columns missing from the dataset are left unchanged)
+    // Given: a NOT NULL column "name" that the dataset does not carry
+    execute(
+        "DELETE FROM \"Crm Owner\".account",
+        "CREATE TABLE IF NOT EXISTS \"Crm Owner\".strict (id INT PRIMARY KEY, name TEXT NOT NULL,"
+            + " status TEXT)",
+        "DELETE FROM \"Crm Owner\".strict",
+        "INSERT INTO \"Crm Owner\".strict VALUES (1, 'Old', 'OLD')");
+    EngineScenario scenario = scenario(QUERIES);
+    java.nio.file.Files.writeString(
+        scenario.dataset(), "<dataset><strict id=\"1\" status=\"NEW\"/></dataset>");
+    // When
+    EngineScenario.Result prepared = scenario.prepare();
+    // Then
+    assertThat(prepared.exitCode()).as(prepared.err()).isZero();
+    assertThat(scalar("SELECT name || '/' || status FROM \"Crm Owner\".strict WHERE id = 1"))
+        .isEqualTo("Old/NEW");
+  }
+
+  @Test
   void aSchemaWrittenWithTheWrongCaseIsRejected() throws Exception {
     // Spec: README.md > "SQL identifiers and quoting" (object names are never case-folded)
     // Given

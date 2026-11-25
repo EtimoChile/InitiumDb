@@ -28,6 +28,11 @@
       <includes>
         <include>README.md</include>
         <include>CHANGELOG.md</include>
+        <include>LICENSE</include>
+        <include>NOTICE</include>
+        <include>THIRD_PARTY_LICENSES.md</include>
+        <include>LICENSE-DUAL.md</include>
+        <include>COMMERCIAL-EDITION-NOTICE.md</include>
       </includes>
     </fileSet>
   </fileSets>

@@ -2,9 +2,32 @@ package cl.etimo.initiumdb.db.postgresql;
 
 import cl.etimo.initiumdb.db.BatchedUpsertOperation;
 import java.util.List;
+import org.dbunit.dataset.Column;
+import org.dbunit.dataset.Columns;
 
 /** PostgreSQL upsert: one {@code INSERT ... ON CONFLICT} per row, sent in JDBC batches. */
 final class PostgresqlUpsertOperation extends BatchedUpsertOperation {
+
+  /**
+   * {@code INSERT ... ON CONFLICT} checks NOT NULL on the proposed row before it looks for the
+   * conflict, so a dataset that omits a NOT NULL column without a default fails even when every row
+   * already exists (a partial {@code SELECT col1, col2} capture). DBUnit's {@code REFRESH} updates
+   * only the present columns, so those tables use it.
+   */
+  @Override
+  protected boolean canUpsert(Column[] present, Column[] all) {
+    for (Column column : all) {
+      boolean omitted = Columns.getColumn(column.getColumnName(), present) == null;
+      boolean generated =
+          column.hasDefaultValue()
+              || column.getAutoIncrement() == Column.AutoIncrement.YES
+              || Boolean.TRUE.equals(column.getGeneratedColumn());
+      if (omitted && column.isNotNullable() && !generated) {
+        return false;
+      }
+    }
+    return true;
+  }
 
   @Override
   protected String upsertSql(
@@ -17,7 +40,7 @@ final class PostgresqlUpsertOperation extends BatchedUpsertOperation {
   }
 
   /** Builds the upsert; arguments are already quoted identifiers. */
-  static String insertOnConflictSql(
+  private static String insertOnConflictSql(
       String table,
       List<String> columns,
       List<String> binds,

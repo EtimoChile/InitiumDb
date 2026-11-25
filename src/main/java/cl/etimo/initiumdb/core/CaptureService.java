@@ -15,6 +15,10 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Set;
 import org.dbunit.DatabaseUnitException;
 import org.dbunit.database.IDatabaseConnection;
 import org.dbunit.database.ResultSetTableMetaData;
@@ -155,13 +159,15 @@ public final class CaptureService {
     Path absolute = target.toAbsolutePath();
     Files.createDirectories(absolute.getParent());
     Path temp = Files.createTempFile(absolute.getParent(), ".idb-capture-", ".tmp");
+    Path withDtd = Files.createTempFile(absolute.getParent(), ".idb-capture-", ".tmp");
     try {
+      Map<String, Set<String>> columns = new LinkedHashMap<>();
       try (OutputStream stream = Files.newOutputStream(temp)) {
         FlatXmlWriter writer = new FlatXmlWriter(stream);
         writer.startDataSet();
         for (TableQuery table : queries.tables()) {
           long start = System.nanoTime();
-          long rows = writeTable(connection, dbunit, table, writer);
+          long rows = writeTable(connection, dbunit, table, writer, columns);
           out.println(
               "  "
                   + table.name()
@@ -172,24 +178,35 @@ public final class CaptureService {
         }
         writer.endDataSet();
       }
-      Files.move(temp, absolute, StandardCopyOption.REPLACE_EXISTING);
+      // Flat XML omits NULLs, so the columns are also declared in an internal DTD
+      DatasetColumns.writeWithDtd(temp, withDtd, columns);
+      Files.move(withDtd, absolute, StandardCopyOption.REPLACE_EXISTING);
     } finally {
       Files.deleteIfExists(temp);
+      Files.deleteIfExists(withDtd);
     }
   }
 
   private static long writeTable(
-      Connection connection, IDatabaseConnection dbunit, TableQuery table, FlatXmlWriter writer)
+      Connection connection,
+      IDatabaseConnection dbunit,
+      TableQuery table,
+      FlatXmlWriter writer,
+      Map<String, Set<String>> columns)
       throws SQLException, DatabaseUnitException {
     try {
-      return streamTable(connection, dbunit, table, writer);
+      return streamTable(connection, dbunit, table, writer, columns);
     } catch (SQLException e) {
       throw failed("Table '" + table.name() + "' query", table.sql(), e);
     }
   }
 
   private static long streamTable(
-      Connection connection, IDatabaseConnection dbunit, TableQuery table, FlatXmlWriter writer)
+      Connection connection,
+      IDatabaseConnection dbunit,
+      TableQuery table,
+      FlatXmlWriter writer,
+      Map<String, Set<String>> declared)
       throws SQLException, DatabaseUnitException {
     try (Statement statement = connection.createStatement()) {
       statement.setFetchSize(FETCH_SIZE);
@@ -197,6 +214,10 @@ public final class CaptureService {
         ITableMetaData meta = new ResultSetTableMetaData(table.name(), rs, dbunit, true);
         requireXmlNames(meta);
         Column[] columns = meta.getColumns();
+        Set<String> names = declared.computeIfAbsent(table.name(), k -> new LinkedHashSet<>());
+        for (Column column : columns) {
+          names.add(column.getColumnName());
+        }
         writer.startTable(meta);
         long rows = 0;
         while (rs.next()) {

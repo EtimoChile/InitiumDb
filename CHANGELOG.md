@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Fix: `idb-prepare` no longer buffers whole tables in memory while reading the dataset; it reads the file in two streaming passes, so memory does not grow with the dataset. A malformed dataset is now rejected before the pre hook runs.
+- Fix: a column that is `NULL` in every captured row is no longer silently left unchanged; `idb-capture` declares the columns of each table in an internal DTD of the Flat XML file and `idb-prepare` applies them. Datasets written by earlier versions still load.
+- Fix: the distribution archives now include `LICENSE`, `NOTICE`, `THIRD_PARTY_LICENSES.md`, `LICENSE-DUAL.md` and `COMMERCIAL-EDITION-NOTICE.md`.
+- Fix: on PostgreSQL, a dataset that omits a NOT NULL column without a default (for example captured with `SELECT col1, col2`) no longer fails on rows that already exist; such tables are applied with DBUnit `REFRESH`.
+- Fix: `.github/CODEOWNERS` names the `EtimoChile/maintainers` team.
+
 ## 0.5.0 - 2026-11-25
 
 - Adopt the Apache License 2.0 (`LICENSE`, `NOTICE`, `LICENSE-DUAL.md`, `COMMERCIAL-EDITION-NOTICE.md`, `THIRD_PARTY_LICENSES.md`) and the collaboration model of the Etimo projects (`CONTRIBUTING.md`, `DEVELOPMENT.md`, `.github/CODEOWNERS`).

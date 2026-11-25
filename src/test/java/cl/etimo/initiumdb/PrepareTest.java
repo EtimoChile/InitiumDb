@@ -55,6 +55,52 @@ class PrepareTest {
   }
 
   @Test
+  void aColumnThatIsNullInEveryCapturedRowStaysNullAfterPrepare() {
+    // Spec: README.md > Captured dataset (columns are declared even when every value is NULL)
+    // Given: a captured row whose STATUS is NULL, then the database drifts
+    fx.sql("INSERT INTO CUSTOMER VALUES (1005, 'Only', NULL)");
+    fx.write(
+        "CRM.queries.yml",
+        "tables:\n  - name: CUSTOMER\n    sql: SELECT * FROM CUSTOMER WHERE CUSTOMER_ID = 1005\n");
+    assertThat(fx.capture().exitCode()).isZero();
+    fx.sql("UPDATE CUSTOMER SET STATUS = 'DRIFT' WHERE CUSTOMER_ID = 1005");
+    // When
+    CliRun run = fx.prepare();
+    // Then
+    assertThat(run.exitCode()).as(run.err()).isZero();
+    assertThat(fx.value("SELECT STATUS FROM CUSTOMER WHERE CUSTOMER_ID = 1005")).isNull();
+  }
+
+  @Test
+  void aDatasetWithoutTheColumnDeclarationsStillLoads() {
+    // Spec: README.md > Captured dataset (older datasets have no declarations)
+    // Given: no DTD, the column only appears in the second row
+    fx.write(
+        "CRM.dataset.xml",
+        "<dataset><CUSTOMER CUSTOMER_ID=\"7\" NAME=\"A\"/>"
+            + "<CUSTOMER CUSTOMER_ID=\"8\" NAME=\"B\" STATUS=\"S\"/></dataset>");
+    // When
+    CliRun run = fx.prepare();
+    // Then
+    assertThat(run.exitCode()).as(run.err()).isZero();
+    assertThat(fx.value("SELECT STATUS FROM CUSTOMER WHERE CUSTOMER_ID = 8")).isEqualTo("S");
+  }
+
+  @Test
+  void aMalformedDatasetFailsBeforeThePreHookRuns() {
+    // Spec: README.md > idb-prepare (the dataset is validated before any SQL runs)
+    // Given: a truncated dataset and a pre hook with a visible effect
+    fx.write("CRM.dataset.xml", "<dataset><CUSTOMER CUSTOMER_ID=\"7\" NAME=\"A\"/>");
+    fx.write("CRM.pre.sql", "INSERT INTO CUSTOMER VALUES (99, 'pre', NULL);");
+    // When
+    CliRun run = fx.prepare();
+    // Then
+    assertThat(run.exitCode()).isEqualTo(1);
+    assertThat(run.err()).contains("not valid Flat XML");
+    assertThat(fx.value("SELECT COUNT(*) FROM CUSTOMER WHERE CUSTOMER_ID = 99")).isEqualTo("0");
+  }
+
+  @Test
   void prepareReportsTimesForTablesDatasetAndStep() {
     // Spec: README.md > idb-prepare (timing in the progress output)
     // When
