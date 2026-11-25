@@ -1,0 +1,18 @@
+name: Feature proposal
+description: Suggest an improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do and what gets in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: How could InitiumDb help? Note the scope in the README (development and QA only, four commands).
+    validations:
+      required: true

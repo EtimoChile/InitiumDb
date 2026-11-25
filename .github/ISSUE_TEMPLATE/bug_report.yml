@@ -1,0 +1,39 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include credentials, JDBC URLs with secrets or real data. For security issues, see SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: InitiumDb version
+      description: Output of `idb-prepare --version`
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Java version, OS, database engine and version, JDBC driver version
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Command line and the relevant (sanitized) configuration
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or error messages
+      render: text

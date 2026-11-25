@@ -6,7 +6,7 @@ InitiumDb captures selected records from development or QA databases and prepare
 
 InitiumDb is intended **only for development and QA databases, never production**. It does not provision databases, create schemas or control objects, manage grants, or execute application tests.
 
-> **Project status:** under development. `idb-init`, `idb-crypt`, `idb-capture` and `idb-prepare` are implemented for Oracle and PostgreSQL, but no release has been published. Items explicitly marked *to be defined* remain open.
+> **Project status:** early releases (0.x). `idb-init`, `idb-crypt`, `idb-capture` and `idb-prepare` are implemented for Oracle and PostgreSQL and published on [GitHub Releases](https://github.com/EtimoChile/InitiumDb/releases); behavior and configuration may still change between 0.x versions (see [`CHANGELOG.md`](CHANGELOG.md)). Items explicitly marked *to be defined* remain open.
 
 ## Overview
 
@@ -367,7 +367,14 @@ The following items should be settled before considering this README an implemen
 3. Secret-provider contract and integration with CI/CD and proprietary CD mechanisms.
 4. Handling of case-specific cleanup, sequence values, triggers and generated identifiers.
 5. Portability rules for datasets captured in one environment and applied to another.
-6. Release process.
+
+## Security
+
+InitiumDb handles database credentials and real data. Report vulnerabilities privately as described in [`SECURITY.md`](SECURITY.md), not in public issues. Never publish datasets, secrets files or JDBC URLs with credentials.
+
+## Contributing
+
+Bug reports, fixes, tests and documentation are welcome; see [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`DEVELOPMENT.md`](DEVELOPMENT.md). Questions and ideas go to GitHub Discussions.
 
 ## License and governance
 
