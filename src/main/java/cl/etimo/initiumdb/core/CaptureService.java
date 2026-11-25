@@ -56,9 +56,17 @@ public final class CaptureService {
               + index
               + " of "
               + caseConfig.databases().size();
+      long start = System.nanoTime();
       try {
         int tables = captureStep(step, environment, resolver, out);
-        out.println(label + ": captured " + tables + " table(s) into " + step.dataset());
+        out.println(
+            label
+                + ": captured "
+                + tables
+                + " table(s) into "
+                + step.dataset()
+                + " in "
+                + PrepareService.seconds(System.nanoTime() - start));
       } catch (InitiumDbException e) {
         throw new InitiumDbException(label + ": " + e.getMessage());
       } catch (SQLException | DatabaseUnitException | IOException e) {
@@ -152,8 +160,15 @@ public final class CaptureService {
         FlatXmlWriter writer = new FlatXmlWriter(stream);
         writer.startDataSet();
         for (TableQuery table : queries.tables()) {
+          long start = System.nanoTime();
           long rows = writeTable(connection, dbunit, table, writer);
-          out.println("  " + table.name() + ": " + rows + " row(s)");
+          out.println(
+              "  "
+                  + table.name()
+                  + ": "
+                  + rows
+                  + " row(s) in "
+                  + PrepareService.seconds(System.nanoTime() - start));
         }
         writer.endDataSet();
       }

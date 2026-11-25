@@ -17,10 +17,10 @@ public final class IdbInit {
   static final String USAGE =
       """
       Usage: idb-init --case path/to/case-dir --environment dev \
-      --database [ENGINE:]NAME [--database [ENGINE:]NAME ...] \
+      --alias [ENGINE:]NAME [--alias [ENGINE:]NAME ...] \
       [--engine oracle|postgresql] [--config-dir dir]
         ENGINE is oracle or postgresql (default: --engine, which defaults to oracle).
-        NAME is upper-cased automatically; example: --database oracle:CRM --database postgresql:BILLING
+        NAME is upper-cased automatically; example: --alias oracle:CRM --alias postgresql:BILLING
         The case is a directory holding case.yml; existing files are never overwritten.\
       """;
 
@@ -53,7 +53,7 @@ public final class IdbInit {
               args,
               Set.of("--case", "--environment", "--config-dir", "--engine"),
               Set.of(),
-              Set.of("--database"));
+              Set.of("--alias"));
       Path caseDir = Path.of(cli.require("--case"));
       String configDir = cli.value("--config-dir");
       ConfigLayout layout =
@@ -62,7 +62,7 @@ public final class IdbInit {
       String engine = cli.value("--engine") != null ? cli.value("--engine") : "oracle";
       Engines.named(engine);
       List<ProjectInitializer.Database> databases =
-          ProjectInitializer.databases(cli.values("--database"), engine);
+          ProjectInitializer.databases(cli.values("--alias"), engine);
       MasterKey.loadOrCreate(env, homeDir);
       ProjectInitializer.Report report = ProjectInitializer.init(caseDir, layout, databases);
       report.created().forEach(p -> out.println("Created: " + p));

@@ -170,6 +170,21 @@ class CaptureTest {
   }
 
   @Test
+  void captureRejectsAJdbcUrlWithoutTheJdbcPrefixWithoutPrintingIt() {
+    // Spec: README.md > Environment configuration (jdbcUrl)
+    // Given
+    fx.writeEnvironment(
+        "version: 1\nenvironment: dev\ndatabases:\n  CRM:\n    engine: postgresql\n    jdbcUrl:"
+            + " \"postgresql://secret-host/db\"\n    username: \"sa\"\n");
+    // When
+    CliRun run = fx.capture();
+    // Then
+    assertThat(run.exitCode()).isEqualTo(1);
+    assertThat(run.err()).contains("must start with 'jdbc:'");
+    assertThat(run.out() + run.err()).doesNotContain("secret-host");
+  }
+
+  @Test
   void captureFailsWhenNoCredentialIsAvailable() {
     // Spec: README.md > Local secrets
     // When: no env var and no secrets file

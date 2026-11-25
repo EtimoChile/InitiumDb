@@ -1,8 +1,10 @@
 package cl.etimo.initiumdb.db.postgresql;
 
+import cl.etimo.initiumdb.core.InitiumDbException;
 import cl.etimo.initiumdb.db.DatabaseEngine;
 import cl.etimo.initiumdb.db.SqlIdentifiers;
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import org.dbunit.database.DatabaseConfig;
@@ -34,9 +36,28 @@ public final class PostgresqlEngine implements DatabaseEngine {
     if (schema == null || schema.isBlank()) {
       return;
     }
+    // PostgreSQL accepts a search_path naming a schema that does not exist, and the failure only
+    // shows later as "relation does not exist"; check it here to fail with the cause.
+    if (!schemaExists(connection, schema)) {
+      throw new InitiumDbException(
+          "Schema '"
+              + schema
+              + "' does not exist in the database (schema names are case-sensitive).");
+    }
     String identifier = SqlIdentifiers.quote(schema);
     try (Statement statement = connection.createStatement()) {
       statement.execute("SET search_path TO " + identifier);
     }
+  }
+
+  private static boolean schemaExists(Connection connection, String schema) throws SQLException {
+    try (ResultSet schemas = connection.getMetaData().getSchemas()) {
+      while (schemas.next()) {
+        if (schema.equals(schemas.getString("TABLE_SCHEM"))) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 }

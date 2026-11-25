@@ -47,14 +47,7 @@ class ProjectInitializationTest {
     // When
     CliRun run =
         CliRun.init(
-            NO_ENV,
-            home,
-            "--case",
-            caseDir().toString(),
-            "--environment",
-            "dev",
-            "--database",
-            "CRM");
+            NO_ENV, home, "--case", caseDir().toString(), "--environment", "dev", "--alias", "CRM");
     // Then
     assertThat(run.exitCode()).isZero();
     assertThat(caseFile()).exists();
@@ -68,11 +61,11 @@ class ProjectInitializationTest {
     // Spec: README.md > Initialization
     // Given
     CliRun.init(
-        NO_ENV, home, "--case", caseDir().toString(), "--environment", "dev", "--database", "CRM");
+        NO_ENV, home, "--case", caseDir().toString(), "--environment", "dev", "--alias", "CRM");
     byte[] first = Files.readAllBytes(MasterKey.keyPath(home));
     // When
     CliRun.init(
-        NO_ENV, home, "--case", caseDir().toString(), "--environment", "dev", "--database", "CRM");
+        NO_ENV, home, "--case", caseDir().toString(), "--environment", "dev", "--alias", "CRM");
     // Then
     assertThat(Files.readAllBytes(MasterKey.keyPath(home))).isEqualTo(first);
   }
@@ -89,13 +82,13 @@ class ProjectInitializationTest {
   void initAddsNewDatabasesToExistingFilesAndNeverModifiesExistingOnes() throws IOException {
     // Spec: README.md > Initialization (cumulative, never overwrites)
     // Given: files initialized for CRM and then customised by the user
-    init("--database", "CRM");
+    init("--alias", "CRM");
     Files.writeString(
         config("dev.yml"), Files.readString(config("dev.yml")).replace("USERNAME", "custom_user"));
     Files.writeString(project.resolve("testdata/CRM.queries.yml"), "custom: queries\n");
     Files.writeString(config("dev.secrets.json"), "{\"CRM\": \"hunter2\"}");
     // When
-    CliRun run = init("--database", "CRM", "--database", "postgresql:billing");
+    CliRun run = init("--alias", "CRM", "--alias", "postgresql:billing");
     // Then
     assertThat(run.exitCode()).isZero();
     assertThat(run.out()).contains("Updated: ").contains("Unchanged: ");
@@ -123,12 +116,12 @@ class ProjectInitializationTest {
   void initRunTwiceChangesNothingTheSecondTime() throws IOException {
     // Spec: README.md > Initialization (cumulative, never overwrites)
     // Given
-    init("--database", "CRM", "--database", "BILLING");
+    init("--alias", "CRM", "--alias", "BILLING");
     String caseText = Files.readString(caseFile());
     String environment = Files.readString(config("dev.yml"));
     String secrets = Files.readString(config("dev.secrets.json"));
     // When
-    CliRun run = init("--database", "CRM", "--database", "BILLING");
+    CliRun run = init("--alias", "CRM", "--alias", "BILLING");
     // Then
     assertThat(run.exitCode()).isZero();
     assertThat(run.out()).doesNotContain("Created: ").doesNotContain("Updated: ");
@@ -141,9 +134,9 @@ class ProjectInitializationTest {
   void initNeverChangesTheEngineOfAnExistingDatabase() throws IOException {
     // Spec: README.md > Initialization (an existing database entry is never modified)
     // Given
-    init("--database", "oracle:CRM");
+    init("--alias", "oracle:CRM");
     // When
-    CliRun run = init("--database", "postgresql:CRM");
+    CliRun run = init("--alias", "postgresql:CRM");
     // Then
     assertThat(run.exitCode()).isZero();
     assertThat(yaml(config("dev.yml")).get("databases").get("CRM").get("engine").asText())
@@ -161,7 +154,7 @@ class ProjectInitializationTest {
         "version: 1\nenvironment: qa\ndatabases:\n  CRM:\n    engine: oracle\n"
             + "    jdbcUrl: \"x\"\n    username: \"u\"\n");
     // When
-    CliRun run = init("--database", "BILLING");
+    CliRun run = init("--alias", "BILLING");
     // Then
     assertThat(run.exitCode()).isEqualTo(1);
     assertThat(run.err()).contains("declares environment 'qa'");
@@ -173,13 +166,13 @@ class ProjectInitializationTest {
       throws IOException {
     // Spec: README.md > Initialization (file names are fixed by convention)
     // Given: CRM is in the case with a customised post hook; its other files were deleted
-    init("--database", "CRM");
+    init("--alias", "CRM");
     Files.writeString(project.resolve("testdata/CRM.post.sql"), "DELETE FROM T;\n");
     Files.delete(project.resolve("testdata/CRM.queries.yml"));
     Files.delete(project.resolve("testdata/CRM.pre.sql"));
     String caseText = Files.readString(caseFile());
     // When
-    CliRun run = init("--database", "CRM");
+    CliRun run = init("--alias", "CRM");
     // Then
     assertThat(run.exitCode()).isZero();
     assertThat(project.resolve("testdata/CRM.queries.yml")).exists();
@@ -196,7 +189,7 @@ class ProjectInitializationTest {
     Files.createDirectories(caseFile().getParent());
     Files.writeString(caseFile(), "version: 1\ndatabases: [{alias: CRM}]\n" + "name: x\n");
     // When
-    CliRun run = init("--database", "BILLING");
+    CliRun run = init("--alias", "BILLING");
     // Then
     assertThat(run.exitCode()).isZero();
     JsonNode root = yaml(caseFile());
@@ -213,7 +206,7 @@ class ProjectInitializationTest {
     Files.writeString(caseFile(), "version: 1\nname: x\ndatabases: none\n");
     String before = Files.readString(caseFile());
     // When
-    CliRun run = init("--database", "BILLING");
+    CliRun run = init("--alias", "BILLING");
     // Then
     assertThat(run.exitCode()).isEqualTo(1);
     assertThat(run.err()).contains("'databases'").contains("must be a list");
@@ -224,9 +217,9 @@ class ProjectInitializationTest {
   @Test
   void initConvertsDatabaseNamesToUpperCaseAndAcceptsAnEnginePrefixPerDatabase()
       throws IOException {
-    // Spec: README.md > Initialization (--database [engine:]NAME)
+    // Spec: README.md > Initialization (--alias [engine:]NAME)
     // When
-    CliRun run = init("--database", "oracle:crm", "--database", "PostgreSQL:billing");
+    CliRun run = init("--alias", "oracle:crm", "--alias", "PostgreSQL:billing");
     // Then
     assertThat(run.exitCode()).isZero();
     JsonNode databases = yaml(config("dev.yml")).get("databases");
@@ -248,7 +241,7 @@ class ProjectInitializationTest {
     assertThat(run.err()).isEmpty();
     assertThat(run.out())
         .contains("Usage: idb-init")
-        .contains("--database [ENGINE:]NAME")
+        .contains("--alias [ENGINE:]NAME")
         .contains("oracle:CRM")
         .contains("never overwritten");
     assertThat(MasterKey.keyPath(home)).doesNotExist();
@@ -283,7 +276,7 @@ class ProjectInitializationTest {
             caseDir().toString(),
             "--environment",
             "qa",
-            "--database",
+            "--alias",
             "CRM",
             "--config-dir",
             custom.toString());
@@ -299,14 +292,7 @@ class ProjectInitializationTest {
     // When
     CliRun run =
         CliRun.init(
-            NO_ENV,
-            home,
-            "--case",
-            caseDir().toString(),
-            "--environment",
-            "a/b",
-            "--database",
-            "CRM");
+            NO_ENV, home, "--case", caseDir().toString(), "--environment", "a/b", "--alias", "CRM");
     // Then
     assertThat(run.exitCode()).isEqualTo(1);
     assertThat(caseFile()).doesNotExist();
@@ -317,7 +303,7 @@ class ProjectInitializationTest {
   void initRequiresTheCaseOption() {
     // Spec: README.md > Initialization
     // When
-    CliRun run = CliRun.init(NO_ENV, home, "--environment", "dev", "--database", "CRM");
+    CliRun run = CliRun.init(NO_ENV, home, "--environment", "dev", "--alias", "CRM");
     // Then
     assertThat(run.exitCode()).isEqualTo(1);
     assertThat(run.err()).contains("--case").contains("Usage:");
@@ -335,7 +321,7 @@ class ProjectInitializationTest {
             caseDir().toString(),
             "--environment",
             "dev",
-            "--database",
+            "--alias",
             "CRM",
             "--bogus");
     // Then
@@ -345,7 +331,7 @@ class ProjectInitializationTest {
 
   @Test
   void initCreatesOneSetOfFilesPerDatabaseNextToTheCase() throws IOException {
-    // Spec: README.md > Initialization (--database, repeatable)
+    // Spec: README.md > Initialization (--alias, repeatable)
     // When
     CliRun run =
         CliRun.init(
@@ -355,9 +341,9 @@ class ProjectInitializationTest {
             caseDir().toString(),
             "--environment",
             "dev",
-            "--database",
+            "--alias",
             "CRM",
-            "--database",
+            "--alias",
             "BILLING");
     // Then
     assertThat(run.exitCode()).isZero();
@@ -384,7 +370,7 @@ class ProjectInitializationTest {
             caseDir().toString(),
             "--environment",
             "dev",
-            "--database",
+            "--alias",
             "CRM",
             "--engine",
             "postgresql");
@@ -402,7 +388,7 @@ class ProjectInitializationTest {
     CliRun run = CliRun.init(NO_ENV, home, "--case", caseDir().toString(), "--environment", "dev");
     // Then
     assertThat(run.exitCode()).isEqualTo(1);
-    assertThat(run.err()).contains("--database");
+    assertThat(run.err()).contains("--alias");
     assertThat(caseFile()).doesNotExist();
     assertThat(MasterKey.keyPath(home)).doesNotExist();
   }
@@ -412,12 +398,12 @@ class ProjectInitializationTest {
     // Spec: README.md > Initialization
     for (String[] bad :
         new String[][] {
-          {"--database", "a/b"},
-          {"--database", "CRM", "--database", "crm"},
-          {"--database", "mysql:CRM"},
-          {"--database", "oracle:a:b"},
-          {"--database", "1CRM"},
-          {"--database", "CRM", "--engine", "mysql"}
+          {"--alias", "a/b"},
+          {"--alias", "CRM", "--alias", "crm"},
+          {"--alias", "mysql:CRM"},
+          {"--alias", "oracle:a:b"},
+          {"--alias", "1CRM"},
+          {"--alias", "CRM", "--engine", "mysql"}
         }) {
       // When
       java.util.List<String> args =

@@ -36,7 +36,7 @@ public final class ProjectInitializer {
   private ProjectInitializer() {}
 
   /**
-   * Parses one {@code --database} argument: {@code [engine:]NAME}. The name is converted to upper
+   * Parses one {@code --alias} argument: {@code [engine:]NAME}. The name is converted to upper
    * case, the engine to lower case; without a prefix {@code defaultEngine} applies.
    */
   public static Database database(String argument, String defaultEngine) {
@@ -44,19 +44,19 @@ public final class ProjectInitializer {
     String engine =
         colon < 0 ? defaultEngine : argument.substring(0, colon).toLowerCase(Locale.ROOT);
     String alias = (colon < 0 ? argument : argument.substring(colon + 1)).toUpperCase(Locale.ROOT);
-    Names.require(alias, "database name", null);
+    Names.require(alias, "alias", null);
     Engines.named(engine);
     return new Database(alias, engine);
   }
 
-  /** Parses every {@code --database} argument; at least one, names unique after upper-casing. */
+  /** Parses every {@code --alias} argument; at least one, names unique after upper-casing. */
   public static List<Database> databases(List<String> arguments, String defaultEngine) {
     if (arguments.isEmpty()) {
-      throw new InitiumDbException("At least one database is required (--database [ENGINE:]NAME).");
+      throw new InitiumDbException("At least one alias is required (--alias [ENGINE:]NAME).");
     }
     List<Database> result = arguments.stream().map(a -> database(a, defaultEngine)).toList();
     if (result.stream().map(Database::alias).distinct().count() != result.size()) {
-      throw new InitiumDbException("Database names must be unique.");
+      throw new InitiumDbException("Aliases must be unique.");
     }
     return result;
   }
