@@ -7,6 +7,8 @@
 - `idb-capture` and `idb-prepare` encrypt cleartext secrets in place when they find them (previously they failed asking for `idb-crypt`).
 - Add `idb-capture` and `idb-prepare` commands (DBUnit Flat XML, `REFRESH`, declared table order) with an environment-variable and encrypted-secrets credential provider.
 - Use object names (schema, tables) exactly as written, quote the session schema, and let the engine interpret SQL; generate quoted SQL for dataset operations.
+- SQL failures now name the table query, hook statement or guard that failed and show its SQL (queries and hooks are trusted project files).
+- `idb-prepare` reads the dataset as a stream and reports each hook and each table (with row count) as it goes.
 - `idb-capture` streams rows into the dataset instead of loading every result in memory, and prints a row count per table as it goes.
 - Make `idb-capture` reject table or column names that are not valid XML names before writing the dataset.
 - Add per-engine profiles for Oracle and PostgreSQL.

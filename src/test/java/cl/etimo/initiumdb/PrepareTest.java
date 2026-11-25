@@ -36,6 +36,25 @@ class PrepareTest {
   }
 
   @Test
+  void prepareReportsRowsPerTableAndKeepsColumnsThatAppearAfterTheFirstRow() {
+    // Spec: README.md > idb-prepare (progress per table; null values are absent in Flat XML)
+    // Given: the first row has no STATUS, the second does
+    fx.write(
+        "CRM.dataset.xml",
+        "<dataset>"
+            + "<CUSTOMER CUSTOMER_ID=\"1001\" NAME=\"A\"/>"
+            + "<CUSTOMER CUSTOMER_ID=\"1002\" NAME=\"B\" STATUS=\"VIP\"/>"
+            + "<ACCOUNT ACCOUNT_ID=\"2001\" CUSTOMER_ID=\"1001\" BALANCE=\"5\"/>"
+            + "</dataset>");
+    // When
+    CliRun run = fx.prepare();
+    // Then
+    assertThat(run.exitCode()).as(run.err()).isZero();
+    assertThat(fx.value("SELECT STATUS FROM CUSTOMER WHERE CUSTOMER_ID = 1002")).isEqualTo("VIP");
+    assertThat(run.out()).contains("CUSTOMER: 2 row(s)").contains("ACCOUNT: 1 row(s)");
+  }
+
+  @Test
   void prepareUpdatesMatchingRowsAndInsertsMissingOnes() {
     // Spec: README.md > idb-prepare (REFRESH)
     // Given
@@ -224,6 +243,7 @@ class PrepareTest {
     CliRun run = fx.prepare();
     // Then
     assertThat(run.exitCode()).isEqualTo(1);
+    assertThat(run.err()).contains("post hook statement 1 failed").contains("UPDATE NO_SUCH_TABLE");
     assertThat(fx.value("SELECT COUNT(*) FROM CUSTOMER")).isEqualTo("2");
   }
 

@@ -94,6 +94,9 @@ class CaptureTest {
     assertThat(fx.read("CRM.dataset.xml"))
         .isEqualTo("<dataset><CUSTOMER CUSTOMER_ID=\"1\"/></dataset>");
     assertThat(run.err()).contains("Step 1 (CRM)");
+    assertThat(run.err())
+        .contains("Table 'ACCOUNT' query failed")
+        .contains("SELECT * FROM NO_SUCH_TABLE");
   }
 
   @Test

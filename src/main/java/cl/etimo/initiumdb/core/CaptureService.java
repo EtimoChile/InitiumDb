@@ -153,6 +153,16 @@ public final class CaptureService {
   private static long writeTable(
       Connection connection, IDatabaseConnection dbunit, TableQuery table, FlatXmlWriter writer)
       throws SQLException, DatabaseUnitException {
+    try {
+      return streamTable(connection, dbunit, table, writer);
+    } catch (SQLException e) {
+      throw failed("Table '" + table.name() + "' query", table.sql(), e);
+    }
+  }
+
+  private static long streamTable(
+      Connection connection, IDatabaseConnection dbunit, TableQuery table, FlatXmlWriter writer)
+      throws SQLException, DatabaseUnitException {
     try (Statement statement = connection.createStatement()) {
       statement.setFetchSize(FETCH_SIZE);
       try (ResultSet rs = statement.executeQuery(table.sql())) {
@@ -173,6 +183,15 @@ public final class CaptureService {
         return rows;
       }
     }
+  }
+
+  /** A SQL failure that names what was running and the statement itself (trusted project SQL). */
+  static InitiumDbException failed(String what, String sql, SQLException e) {
+    String oneLine = sql.strip().replaceAll("\s+", " ");
+    if (oneLine.length() > 500) {
+      oneLine = oneLine.substring(0, 500) + "...";
+    }
+    return new InitiumDbException(what + " failed: " + describe(e) + " [SQL: " + oneLine + "]");
   }
 
   static String describe(Exception e) {
