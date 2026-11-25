@@ -32,14 +32,14 @@
   <properties>
     <maven.compiler.release>25</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <jackson.version>2.18.2</jackson.version>
+    <jackson.version>2.18.12</jackson.version>
     <dbunit.version>3.0.0</dbunit.version>
     <slf4j.version>1.7.36</slf4j.version>
-    <postgresql.version>42.7.4</postgresql.version>
+    <postgresql.version>42.7.12</postgresql.version>
     <ojdbc.version>23.5.0.24.07</ojdbc.version>
     <h2.version>2.3.232</h2.version>
     <junit.version>5.11.4</junit.version>
-    <assertj.version>3.27.3</assertj.version>
+    <assertj.version>3.27.7</assertj.version>
     <mockito.version>5.20.0</mockito.version>
     <!-- Must match Mockito's own ByteBuddy: AssertJ pulls an older one that cannot read Java 25. -->
     <bytebuddy.version>1.17.7</bytebuddy.version>
