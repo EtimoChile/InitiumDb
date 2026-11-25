@@ -75,6 +75,20 @@ class DistributionIT {
   }
 
   @Test
+  void theDistributionCarriesTheLicenseAndNoticeFiles() {
+    // Spec: README.md > Installation; License and governance
+    for (String file :
+        List.of(
+            "LICENSE",
+            "NOTICE",
+            "THIRD_PARTY_LICENSES.md",
+            "LICENSE-DUAL.md",
+            "COMMERCIAL-EDITION-NOTICE.md")) {
+      assertThat(dist().resolve(file)).isRegularFile();
+    }
+  }
+
+  @Test
   void versionPrintsThePackagedVersionThroughTheLauncher() throws Exception {
     // Spec: README.md > Installation (--version)
     // When
