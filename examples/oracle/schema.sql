@@ -1,0 +1,23 @@
+-- Example CRM model for the case in testdata/regression. Run it ONLY on a disposable
+-- development database, as a user allowed to create the CRM_OWNER objects.
+whenever sqlerror continue
+
+DROP TABLE CRM_OWNER.ACCOUNT cascade constraints;
+DROP TABLE CRM_OWNER.CUSTOMER cascade constraints;
+
+whenever sqlerror exit failure rollback
+
+CREATE TABLE CRM_OWNER.CUSTOMER (
+  CUSTOMER_ID NUMBER(10)    NOT NULL,
+  NAME        VARCHAR2(100) NOT NULL,
+  STATUS      VARCHAR2(10)  NOT NULL,
+  CONSTRAINT PK_CUSTOMER PRIMARY KEY (CUSTOMER_ID)
+);
+
+CREATE TABLE CRM_OWNER.ACCOUNT (
+  ACCOUNT_ID  NUMBER(10) NOT NULL,
+  CUSTOMER_ID NUMBER(10) NOT NULL,
+  BALANCE     NUMBER(14,2),
+  CONSTRAINT PK_ACCOUNT PRIMARY KEY (ACCOUNT_ID),
+  CONSTRAINT FK_ACCOUNT_CUSTOMER FOREIGN KEY (CUSTOMER_ID) REFERENCES CRM_OWNER.CUSTOMER (CUSTOMER_ID)
+);

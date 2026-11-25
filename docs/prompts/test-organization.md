@@ -11,7 +11,7 @@ The governing `README.md` section decides the class. Complements
 | integration | `src/test/java/cl/etimo/initiumdb/integration/<engine>/` | Real disposable DB; opt-in `@Tag("<engine>_integration")` |
 
 Integration tests are excluded by default; run with `mvn test -Poracle-integration`
-or `mvn test -Ppostgres-integration`. Test resources go in `src/test/resources`.
+or `mvn test -Ppostgresql-integration` (tags `oracle_integration`, `postgresql_integration`). Test resources go in `src/test/resources`.
 
 Error paths live in the class of the contract that raises them.
 
@@ -19,4 +19,6 @@ Contract-to-class map (extend as contracts are defined):
 
 | Contract | Class |
 |---|---|
-| (none yet) | |
+| README > Initialization (`idb-init`) | `ProjectInitializationTest` |
+| README > Local secrets (`idb-crypt`) | `SecretEncryptionTest` |
+| README > Installation (launchers, `lib/`) | `DistributionIT` (Failsafe, runs after `package` in `mvn verify`) |

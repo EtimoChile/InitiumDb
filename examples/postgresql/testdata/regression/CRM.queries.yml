@@ -1,0 +1,9 @@
+# Order of tables is significant: parents before children.
+schema: crm_owner
+tables:
+  - name: customer
+    sql: |
+      SELECT * FROM crm_owner.customer WHERE customer_id IN (1001, 1002) ORDER BY customer_id
+  - name: account
+    sql: |
+      SELECT * FROM crm_owner.account WHERE customer_id IN (1001, 1002) ORDER BY account_id

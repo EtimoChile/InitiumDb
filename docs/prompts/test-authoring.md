@@ -9,14 +9,14 @@ code under test.
 ## Rules
 
 - R1: Name the observable TDM behavior, not the method
-  (`maskedColumnNeverContainsOriginalValue`).
+  (`capturedDatasetPreservesConfiguredTableOrder`).
 - R2: No access to private or package-private internals (no reflection); use
   public interfaces or the CLI.
 - R3: Each test cites its spec source in a comment (`// Spec: README.md > ...`).
 - R4: Body uses `// Given` / `// When` / `// Then`.
 - R5: No assertions on internal structures; assert observable effects.
 - R6: At least one adversarial case per behavior (empty dataset, invalid
-  rule, missing key, unmasked leak, partial failure).
+  configuration, missing file, secret leaked to logs, partial failure).
 - R7: Do not mock the code under test. Build real inputs in a JUnit `@TempDir`.
   Mock only the database layer, following the engine contract.
 

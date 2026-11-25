@@ -1,0 +1,7 @@
+<!-- Example of what idb-capture writes. Fictitious data only. -->
+<dataset>
+  <CUSTOMER CUSTOMER_ID="1001" NAME="Demo Customer One" STATUS="ACTIVE"/>
+  <CUSTOMER CUSTOMER_ID="1002" NAME="Demo Customer Two" STATUS="ACTIVE"/>
+  <ACCOUNT ACCOUNT_ID="2001" CUSTOMER_ID="1001" BALANCE="50000"/>
+  <ACCOUNT ACCOUNT_ID="2002" CUSTOMER_ID="1002" BALANCE="75000"/>
+</dataset>

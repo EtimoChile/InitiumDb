@@ -1,0 +1,154 @@
+package cl.etimo.initiumdb.core;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.util.DefaultIndenter;
+import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
+
+/**
+ * Local secrets file: a JSON object mapping each {@code credential} name of the environment file to
+ * its password.
+ */
+public final class SecretsFile {
+
+  private static final ObjectMapper MAPPER =
+      new ObjectMapper()
+          .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+
+  private SecretsFile() {}
+
+  /**
+   * Encrypts every non-empty cleartext value in place. Returns {@code true} when the file changed.
+   * Empty values are left untouched; already encrypted values are never re-encrypted.
+   */
+  public static boolean encryptInPlace(Path file, byte[] key) {
+    if (!Files.isRegularFile(file)) {
+      throw new InitiumDbException("Secrets file not found: " + file);
+    }
+    ObjectNode root = read(file);
+    List<String> names = new ArrayList<>();
+    root.fieldNames().forEachRemaining(names::add);
+    boolean updated = false;
+    for (String name : names) {
+      JsonNode value = root.get(name);
+      if (!value.isTextual()) {
+        throw new InitiumDbException("Secret '" + name + "' in " + file + " must be a string.");
+      }
+      String text = value.asText();
+      if (!text.isEmpty() && !SecretCipher.isEncrypted(text)) {
+        root.put(name, SecretCipher.encrypt(text, key));
+        updated = true;
+      }
+    }
+    if (updated) {
+      write(file, root);
+    }
+    return updated;
+  }
+
+  /**
+   * Returns the password stored under {@code credential}. Encrypted values are decrypted with the
+   * key from {@code key} (requested only when needed); an empty value is an empty password. A
+   * cleartext value is used as is and the whole file is encrypted in place first, with the key from
+   * {@code newKey} (which may create it); {@code notice} then receives a message naming the file.
+   */
+  public static String resolve(
+      Path file,
+      String credential,
+      Supplier<byte[]> key,
+      Supplier<byte[]> newKey,
+      Consumer<String> notice) {
+    if (!Files.isRegularFile(file)) {
+      throw new InitiumDbException(
+          "Secrets file not found: " + file + " (needed for credential '" + credential + "').");
+    }
+    JsonNode value = read(file).get(credential);
+    if (value == null) {
+      throw new InitiumDbException("Credential '" + credential + "' not found in " + file + ".");
+    }
+    if (!value.isTextual()) {
+      throw new InitiumDbException("Secret '" + credential + "' in " + file + " must be a string.");
+    }
+    String text = value.asText();
+    if (text.isEmpty()) {
+      return text;
+    }
+    if (!SecretCipher.isEncrypted(text)) {
+      encryptInPlace(file, newKey.get());
+      notice.accept("Cleartext secrets encrypted in " + file);
+      return text;
+    }
+    return SecretCipher.decrypt(text, key.get());
+  }
+
+  private static ObjectNode read(Path file) {
+    try {
+      JsonNode node = MAPPER.readTree(Files.readString(file, StandardCharsets.UTF_8));
+      if (node instanceof ObjectNode object) {
+        object
+            .fieldNames()
+            .forEachRemaining(n -> Names.require(n, "credential name", file.toString()));
+        return object;
+      }
+    } catch (JsonProcessingException e) {
+      // The parser message may quote file content, so it is deliberately not propagated.
+    } catch (IOException e) {
+      throw new InitiumDbException("Unable to read secrets file " + file + ".");
+    }
+    throw new InitiumDbException("Secrets file " + file + " must be a valid JSON object.");
+  }
+
+  /**
+   * Returns the content of {@code file} with an empty entry added for every name that is missing,
+   * or {@code null} when nothing is missing. Existing entries are kept exactly as they are. The
+   * file is not modified.
+   */
+  static String withMissing(Path file, Collection<String> names) {
+    ObjectNode root = read(file);
+    boolean added = false;
+    for (String name : names) {
+      if (!root.has(name)) {
+        root.put(name, "");
+        added = true;
+      }
+    }
+    return added ? render(file, root) : null;
+  }
+
+  /** Returns the content of a new secrets file with an empty entry per name. */
+  static String create(Path file, Collection<String> names) {
+    ObjectNode root = MAPPER.createObjectNode();
+    names.forEach(name -> root.put(name, ""));
+    return render(file, root);
+  }
+
+  private static String render(Path file, ObjectNode root) {
+    DefaultPrettyPrinter printer =
+        new DefaultPrettyPrinter().withObjectIndenter(new DefaultIndenter("  ", "\n"));
+    try {
+      return MAPPER.writer(printer).writeValueAsString(root) + "\n";
+    } catch (IOException e) {
+      throw new InitiumDbException("Unable to write secrets file " + file + ".");
+    }
+  }
+
+  private static void write(Path file, ObjectNode root) {
+    String content = render(file, root);
+    try {
+      Files.writeString(file, content, StandardCharsets.UTF_8);
+    } catch (IOException e) {
+      throw new InitiumDbException("Unable to write secrets file " + file + ".");
+    }
+  }
+}

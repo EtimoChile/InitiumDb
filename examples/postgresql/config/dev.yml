@@ -1,0 +1,11 @@
+# Example environment for examples/postgresql (DEVELOPMENT/QA databases only, never production).
+# Passwords do not go here: the secret named after the alias (CRM, ignoring case) is looked up in dev.secrets.json
+# next to this file (copy secrets.example.json, then run idb-crypt).
+version: 1
+environment: dev
+
+databases:
+  CRM:
+    engine: postgresql
+    jdbcUrl: "jdbc:postgresql://dev-host.example:5432/crm"
+    username: "tdm_user"
