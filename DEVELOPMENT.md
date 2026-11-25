@@ -38,7 +38,15 @@ pre-commit run --all-files
 ```
 
 Pull requests and pushes to `development` or `main` run `spotless:check` and
-`mvn verify` in GitHub Actions.
+`mvn verify` in GitHub Actions; pull requests also run the PostgreSQL and Oracle
+container jobs. `quality`, `postgresql-integration` and `oracle-integration` are
+required checks on both branches.
+
+## Coverage
+
+`mvn verify` writes the JaCoCo report to `target/site/jacoco/`. In CI, the
+container jobs add their execution data to the unit-test data and upload the
+combined report as a workflow artifact (14 days).
 
 ## Managing dependencies
 
