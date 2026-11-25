@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## 0.4.0
 
 - A `jdbcUrl` that does not start with `jdbc:` now fails with a clear message instead of a misleading "No JDBC driver found".
