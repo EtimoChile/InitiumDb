@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0 - 2026-11-25
+
+- Adopt the Apache License 2.0 (`LICENSE`, `NOTICE`, `LICENSE-DUAL.md`, `COMMERCIAL-EDITION-NOTICE.md`, `THIRD_PARTY_LICENSES.md`) and the collaboration model of the Etimo projects (`CONTRIBUTING.md`, `DEVELOPMENT.md`, `.github/CODEOWNERS`).
+- Add a CI workflow (`spotless:check`, `mvn verify`, PostgreSQL and Oracle container jobs on pull requests) with JaCoCo coverage: unit coverage is combined with each integration job and uploaded as an artifact.
+- Add `SECURITY.md`, `CODE_OF_CONDUCT.md`, issue and pull request templates.
+
 ## 0.4.0
 
 - A `jdbcUrl` that does not start with `jdbc:` now fails with a clear message instead of a misleading "No JDBC driver found".

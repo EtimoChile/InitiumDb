@@ -1,0 +1,11 @@
+# All changes require review from the project maintainer org.
+* @etimochile
+
+# Workflow and CI changes are especially sensitive.
+.github/ @etimochile
+
+# Core sources and tests.
+src/ @etimochile
+
+# Packaging and dependency manifest.
+pom.xml @etimochile

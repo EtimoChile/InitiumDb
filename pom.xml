@@ -6,11 +6,28 @@
 
   <groupId>cl.etimo</groupId>
   <artifactId>initiumdb</artifactId>
-  <version>0.4.0</version>
+  <version>0.5.0</version>
   <packaging>jar</packaging>
 
   <name>InitiumDb</name>
   <description>Configuration-driven preparation of relational database test data</description>
+  <url>https://github.com/EtimoChile/InitiumDb</url>
+  <inceptionYear>2026</inceptionYear>
+  <organization>
+    <name>Inversiones Etimo SpA</name>
+    <url>https://www.etimo.cl</url>
+  </organization>
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+  <scm>
+    <url>https://github.com/EtimoChile/InitiumDb</url>
+    <connection>scm:git:https://github.com/EtimoChile/InitiumDb.git</connection>
+  </scm>
 
   <properties>
     <maven.compiler.release>25</maven.compiler.release>
@@ -189,6 +206,28 @@
             <goals>
               <goal>integration-test</goal>
               <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Coverage: unit tests, and with the container profiles also the integration tests. -->
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <version>0.8.14</version>
+        <executions>
+          <execution>
+            <id>prepare-agent</id>
+            <goals>
+              <goal>prepare-agent</goal>
+            </goals>
+          </execution>
+          <execution>
+            <id>report</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>report</goal>
             </goals>
           </execution>
         </executions>

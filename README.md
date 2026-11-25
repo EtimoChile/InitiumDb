@@ -6,7 +6,7 @@ InitiumDb captures selected records from development or QA databases and prepare
 
 InitiumDb is intended **only for development and QA databases, never production**. It does not provision databases, create schemas or control objects, manage grants, or execute application tests.
 
-> **Project status:** under development. `idb-init`, `idb-crypt`, `idb-capture` and `idb-prepare` are implemented for Oracle and PostgreSQL, but no release has been published. Items explicitly marked *to be defined* remain open.
+> **Project status:** early releases (0.x). `idb-init`, `idb-crypt`, `idb-capture` and `idb-prepare` are implemented for Oracle and PostgreSQL and published on [GitHub Releases](https://github.com/EtimoChile/InitiumDb/releases); behavior and configuration may still change between 0.x versions (see [`CHANGELOG.md`](CHANGELOG.md)). Items explicitly marked *to be defined* remain open.
 
 ## Overview
 
@@ -367,13 +367,31 @@ The following items should be settled before considering this README an implemen
 3. Secret-provider contract and integration with CI/CD and proprietary CD mechanisms.
 4. Handling of case-specific cleanup, sequence values, triggers and generated identifiers.
 5. Portability rules for datasets captured in one environment and applied to another.
-6. Release process.
+
+## Security
+
+InitiumDb handles database credentials and real data. Report vulnerabilities privately as described in [`SECURITY.md`](SECURITY.md), not in public issues. Never publish datasets, secrets files or JDBC URLs with credentials.
+
+## Contributing
+
+Bug reports, fixes, tests and documentation are welcome; see [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`DEVELOPMENT.md`](DEVELOPMENT.md). Questions and ideas go to GitHub Discussions.
 
 ## License and governance
 
-The intended governance model is an open-source core, public issue tracking and contributions, documented releases, and maintenance by **Inversiones Etimo SpA**. **Apache License 2.0 is proposed but not yet finalized for InitiumDb.**
+InitiumDb is licensed under the [Apache License 2.0](LICENSE). See [`NOTICE`](NOTICE), [`LICENSE-DUAL.md`](LICENSE-DUAL.md) (open-source and optional commercial licensing), [`COMMERCIAL-EDITION-NOTICE.md`](COMMERCIAL-EDITION-NOTICE.md) and [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md). JDBC drivers are not redistributed; you supply them and their licenses apply.
 
-Any future proprietary extensions (such as an integration with an internal CD mechanism) should remain separate from the open-source core. Ownership, trademark and commercial-edition statements must be reviewed for consistency with the selected open-source license before publication.
+### Governance and Ownership
+
+- **Maintainer:** Inversiones Etimo SpA — contacto@etimo.cl — https://www.etimo.cl
+- **Contributions:** see [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`DEVELOPMENT.md`](DEVELOPMENT.md). Issues and discussions are public; pull requests target `development`.
+- **Release model:**
+  - `development` is the integration branch for new work.
+  - `main` holds stable releases only.
+  - Tags (`vX.Y.Z`) and the changelog define official versions.
+
+### Ownership
+
+All intellectual property and trademarks for InitiumDb are owned by **Inversiones Etimo SpA**. Open-source distribution under the Apache 2.0 license does **not** transfer ownership of the software or brand. Any proprietary extensions, hosted services, or commercial editions may be offered solely by Inversiones Etimo SpA.
 
 ## Project intent
 

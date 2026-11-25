@@ -8,12 +8,16 @@ mandatory.
 ## Sources of truth (highest first)
 
 1. `AGENTS.md`
-2. `README.md`: public behavior, configuration, CLI.
-3. `docs/prompts/test-authoring.md`, `docs/prompts/test-organization.md`:
+2. `LICENSE`, `NOTICE`, `LICENSE-DUAL.md`, `COMMERCIAL-EDITION-NOTICE.md`,
+   `THIRD_PARTY_LICENSES.md`, `CONTRIBUTING.md`, `.github/CODEOWNERS`:
+   authoritative for licensing, ownership and collaboration. Do not
+   reinterpret or modify those terms as part of an ordinary technical task.
+3. `README.md`: public behavior, configuration, CLI.
+4. `docs/prompts/test-authoring.md`, `docs/prompts/test-organization.md`:
    normative for tests. `ACTIVE` decisions in `docs/ai-state/DECISIONS.md`.
-4. Engine-independent contract in `cl.etimo.initiumdb.db`.
-5. Code, config, tests.
-6. `CHANGELOG.md`: history only.
+5. Engine-independent contract in `cl.etimo.initiumdb.db`.
+6. Code, config, tests.
+7. `CHANGELOG.md`: history only.
 
 Same-rank conflict: do not choose silently; log it in `docs/ai-state/PENDING.md`
 and change only what is unambiguous.
@@ -33,6 +37,16 @@ only if state, pending items, or decisions changed. No diary entries.
 
 - `development`: default branch; work branches start from it and PRs target it.
 - `main`: releases only; changes arrive from `development` on explicit request.
+
+## Governance and ownership
+
+InitiumDb is maintained by Inversiones Etimo SpA, which owns the project and
+brand; the code is Apache 2.0 (`LICENSE`). Do not add files, headers, or text
+that change license, ownership, or commercial-edition statements, and do not
+add dependencies whose license conflicts with Apache 2.0 distribution without
+recording it in `THIRD_PARTY_LICENSES.md` and `docs/ai-state/PENDING.md`.
+Changes to `.github/` and the files listed in `.github/CODEOWNERS` need the
+maintainer's review.
 
 ## Language
 
@@ -81,4 +95,6 @@ Integration tests are opt-in (`-Poracle-integration`, `-Ppostgresql-integration`
 and require a user-declared disposable DB.
 
 Never claim a check passed unless it ran. Behavior changes need tests and docs.
-No releases, tags, or publishing without explicit request.
+No releases, tags, or publishing without explicit request. Before tagging, the
+`Unreleased` section of `CHANGELOG.md` becomes the dated version entry, derived
+from the `changelog:` lines of `DECISIONS.md`.

@@ -9,6 +9,7 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Duration;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -24,7 +25,10 @@ import org.testcontainers.oracle.OracleContainer;
 class OracleRoundTripTest {
 
   private static final OracleContainer ORACLE =
-      new OracleContainer("gvenzl/oracle-free:23-slim-faststart");
+      new OracleContainer("gvenzl/oracle-free:23-slim-faststart")
+          // The image takes about two minutes to open its database on a laptop; the default is 60
+          // s.
+          .withStartupTimeout(Duration.ofMinutes(6));
 
   /**
    * The schema and {@code Customer} are quoted with mixed case; {@code ACCOUNT} is unquoted (upper
