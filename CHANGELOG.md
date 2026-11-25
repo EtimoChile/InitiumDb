@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 - A `jdbcUrl` that does not start with `jdbc:` now fails with a clear message instead of a misleading "No JDBC driver found".
 - On PostgreSQL, a `schema` that does not exist fails with "Schema ... does not exist" instead of a later "relation does not exist".
