@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Update dependencies with published security fixes: jackson-databind and jackson-dataformat-yaml 2.18.12, PostgreSQL JDBC driver used for builds and tests 42.7.12 (drivers are not distributed, so users should update theirs too), AssertJ 3.27.7 (tests only).
+
 ## 0.5.0 - 2026-11-25
 
 - Adopt the Apache License 2.0 (`LICENSE`, `NOTICE`, `LICENSE-DUAL.md`, `COMMERCIAL-EDITION-NOTICE.md`, `THIRD_PARTY_LICENSES.md`) and the collaboration model of the Etimo projects (`CONTRIBUTING.md`, `DEVELOPMENT.md`, `.github/CODEOWNERS`).
