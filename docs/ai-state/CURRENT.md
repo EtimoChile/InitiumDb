@@ -12,4 +12,5 @@
 - JDBC drivers are user-supplied (`drivers/` folder, DEC-008).
 - Packaging: `mvn package` builds the folder distribution and archives (DEC-008); `DistributionIT` (Failsafe, in `mvn verify`) runs the launchers; the shell launchers were checked on Git Bash only, not on a real Unix.
 - Oracle and PostgreSQL apply the dataset with batched upserts (`BatchedUpsertOperation`, DEC-011): `MERGE` on Oracle, `INSERT ... ON CONFLICT` on PostgreSQL. Both are checked against real containers (opt-in profiles) and Oracle also on H2; timing on the user's Oracle case: 520 s with `REFRESH` vs 10 s.
-- Opt-in integration tests against disposable containers (Docker required): `-Ppostgresql-integration` and `-Poracle-integration`, 2 tests each, both pass.
+- Opt-in integration tests against disposable containers (Docker required): `-Ppostgresql-integration` and `-Poracle-integration`, 2 tests each, both pass (Oracle: 3 tests in about 150 s on a laptop, the image needs about 2 minutes to open its database, so the test allows 6 minutes).
+- Licensing and governance follow DEC-012: Apache 2.0 `LICENSE`, `NOTICE`, dual-licensing and commercial-edition notices, `THIRD_PARTY_LICENSES.md`, `CONTRIBUTING.md`, `DEVELOPMENT.md`, `.github/CODEOWNERS`, CI in `.github/workflows/ci.yml` (not yet run on GitHub), release in `release.yml`.

@@ -11,6 +11,23 @@
 
   <name>InitiumDb</name>
   <description>Configuration-driven preparation of relational database test data</description>
+  <url>https://github.com/EtimoChile/InitiumDb</url>
+  <inceptionYear>2026</inceptionYear>
+  <organization>
+    <name>Inversiones Etimo SpA</name>
+    <url>https://www.etimo.cl</url>
+  </organization>
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+  <scm>
+    <url>https://github.com/EtimoChile/InitiumDb</url>
+    <connection>scm:git:https://github.com/EtimoChile/InitiumDb.git</connection>
+  </scm>
 
   <properties>
     <maven.compiler.release>25</maven.compiler.release>
