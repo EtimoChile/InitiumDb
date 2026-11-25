@@ -38,6 +38,20 @@ class CaptureTest {
   }
 
   @Test
+  void capturedDatasetDeclaresEveryColumnEvenWhenAllValuesAreNull() {
+    // Spec: README.md > Captured dataset (Flat XML omits NULLs, so columns are declared)
+    // Given
+    fx.sql("UPDATE CUSTOMER SET STATUS = NULL");
+    // When
+    CliRun run = fx.capture();
+    // Then
+    assertThat(run.exitCode()).as(run.err()).isZero();
+    assertThat(fx.read("CRM.dataset.xml"))
+        .contains("<!ATTLIST CUSTOMER CUSTOMER_ID CDATA #IMPLIED NAME CDATA #IMPLIED STATUS")
+        .doesNotContain("STATUS=");
+  }
+
+  @Test
   void capturedDatasetPreservesConfiguredTableOrder() {
     // Spec: README.md > Captured dataset (table order)
     // Given: ACCOUNT is configured before CUSTOMER

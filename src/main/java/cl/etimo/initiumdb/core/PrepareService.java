@@ -166,13 +166,15 @@ public final class PrepareService {
   }
 
   /**
-   * The dataset is read as a stream (never fully in memory). Column sensing keeps the columns that
-   * appear after the first row (null values are not written to Flat XML). Progress is reported per
-   * table as its rows go by.
+   * The dataset is read as a stream, never fully in memory (DEC-013). A first streaming pass reads
+   * the structure of the file (and fails here, before the pre hook, if the XML is malformed); the
+   * second produces the rows against it. Progress is reported per table as its rows go by.
    */
-  private static ProgressProducer progressProducer(Path file, PrintStream out) {
+  private static ProgressProducer progressProducer(Path file, PrintStream out)
+      throws DataSetException {
+    IDataSet structure = DatasetColumns.scan(file);
     IDataSetProducer producer =
-        new FlatXmlProducer(new InputSource(file.toUri().toString()), false, true, true);
+        new FlatXmlProducer(new InputSource(file.toUri().toString()), structure);
     return new ProgressProducer(producer, out);
   }
 
