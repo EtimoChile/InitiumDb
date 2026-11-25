@@ -49,6 +49,10 @@ final class DataCommand {
       out.println(usage);
       return 0;
     }
+    if (CliArgs.isVersion(args)) {
+      out.println(Version.line(name));
+      return 0;
+    }
     try {
       CliArgs cli = CliArgs.parse(args, options(extraOptions), Set.of());
       String configDir = cli.value("--config-dir");

@@ -51,6 +51,11 @@ final class CliArgs {
     return java.util.Arrays.stream(args).anyMatch(a -> a.equals("--help") || a.equals("-h"));
   }
 
+  /** Returns {@code true} when the command line asks for the version ({@code --version}). */
+  static boolean isVersion(String[] args) {
+    return java.util.Arrays.asList(args).contains("--version");
+  }
+
   /** Returns every value of a repeatable option, in command-line order. */
   java.util.List<String> values(String name) {
     return lists.getOrDefault(name, java.util.List.of());

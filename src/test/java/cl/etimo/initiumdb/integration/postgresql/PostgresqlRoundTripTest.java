@@ -110,6 +110,35 @@ class PostgresqlRoundTripTest {
   }
 
   @Test
+  void prepareUpdatesExistingRowsAndInsertsMissingOnesWithBatchedUpserts() throws Exception {
+    // Spec: README.md > idb-prepare (PostgreSQL applies the dataset with INSERT ... ON CONFLICT)
+    // Given: row 1 exists with other values; the dataset has rows 1 and 3, and row 3 has no balance
+    execute(
+        "DELETE FROM \"Crm Owner\".account",
+        "DELETE FROM \"Crm Owner\".\"Customer\"",
+        "INSERT INTO \"Crm Owner\".\"Customer\" VALUES (1, 'Old'), (9, 'Untouched')");
+    EngineScenario scenario = scenario(QUERIES);
+    java.nio.file.Files.writeString(
+        scenario.dataset(),
+        "<dataset><Customer Id=\"1\" FullName=\"New\"/><Customer Id=\"3\" FullName=\"Cy\"/>"
+            + "<account account_id=\"10\"/></dataset>");
+
+    // When
+    EngineScenario.Result prepared = scenario.prepare();
+
+    // Then
+    assertThat(prepared.exitCode()).as(prepared.err()).isZero();
+    assertThat(prepared.out()).contains("(optimized)");
+    assertThat(scalar("SELECT \"FullName\" FROM \"Crm Owner\".\"Customer\" WHERE \"Id\" = 1"))
+        .isEqualTo("New");
+    assertThat(scalar("SELECT \"FullName\" FROM \"Crm Owner\".\"Customer\" WHERE \"Id\" = 3"))
+        .isEqualTo("Cy");
+    assertThat(scalar("SELECT \"FullName\" FROM \"Crm Owner\".\"Customer\" WHERE \"Id\" = 9"))
+        .isEqualTo("Untouched");
+    assertThat(scalar("SELECT balance FROM \"Crm Owner\".account WHERE account_id = 10")).isNull();
+  }
+
+  @Test
   void aSchemaWrittenWithTheWrongCaseIsRejected() throws Exception {
     // Spec: README.md > "SQL identifiers and quoting" (object names are never case-folded)
     // Given

@@ -43,6 +43,10 @@ public final class IdbInit {
       out.println(USAGE);
       return 0;
     }
+    if (CliArgs.isVersion(args)) {
+      out.println(Version.line("idb-init"));
+      return 0;
+    }
     try {
       CliArgs cli =
           CliArgs.parse(

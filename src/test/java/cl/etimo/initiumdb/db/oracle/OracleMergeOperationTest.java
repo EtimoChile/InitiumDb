@@ -3,6 +3,7 @@ package cl.etimo.initiumdb.db.oracle;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import cl.etimo.initiumdb.db.BatchedUpsertOperation;
 import java.io.StringReader;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -132,7 +133,7 @@ class OracleMergeOperationTest {
   @Test
   void moreRowsThanOneBatchAreAllApplied() throws Exception {
     // Given
-    int rows = OracleMergeOperation.BATCH_SIZE * 2 + 17;
+    int rows = BatchedUpsertOperation.BATCH_SIZE * 2 + 17;
     StringBuilder xml = new StringBuilder("<dataset>");
     for (int i = 100; i < 100 + rows; i++) {
       xml.append("<ITEM ID='").append(i).append("' NAME='n").append(i).append("'/>");

@@ -32,17 +32,44 @@ InitiumDb is intended **only for development and QA databases, never production*
 
 ## Installation
 
-`mvn package` builds the distribution folder `target/initiumdb-<version>-dist/initiumdb-<version>/` and the archives `initiumdb-<version>-dist.zip` and `.tar.gz`:
+### Download
+
+Releases are published on the project's GitHub page, under **Releases** (`https://github.com/EtimoChile/InitiumDb/releases`). Each release attaches:
+
+- `initiumdb-<version>-dist.zip` and `initiumdb-<version>-dist.tar.gz`: the same distribution in two formats;
+- `SHA256SUMS`: checksums of both archives (`sha256sum -c SHA256SUMS`).
+
+CI can fetch a fixed version with `curl -LO https://github.com/EtimoChile/InitiumDb/releases/download/v<version>/initiumdb-<version>-dist.tar.gz`.
+
+### Layout
+
+Every archive unpacks to a folder named `initiumdb`, without the version, so an upgrade never changes the install path (or the `PATH` entry):
 
 ```text
-initiumdb-<version>/
+initiumdb/
   bin/   idb-capture, idb-prepare, idb-init, idb-crypt   (shell scripts)
          idb-capture.cmd, idb-prepare.cmd, ...           (Windows)
   lib/   initiumdb jar and its runtime jars (no JDBC drivers)
   drivers/  empty; put your JDBC driver jars here
 ```
 
-Unpack an archive anywhere and put `bin/` on the `PATH`. The launchers use `JAVA_HOME` when it is set and otherwise `java` from the `PATH`; Java 25 or later is required. Extra JVM options can be passed in `IDB_JAVA_OPTS`. JDBC drivers are not distributed, so their licenses never constrain the Apache 2.0 distribution: download the driver for your engine (PostgreSQL, Oracle, ...) from its vendor and copy the jar into `drivers/`. Without it, the commands fail with a message pointing to that folder.
+Unpack it where you keep tools (for example `/opt/` or `C:\Util\`) and put `initiumdb/bin` on the `PATH`. To upgrade, replace `lib/` and `bin/` with the new ones (keep `drivers/`), or unpack the new version over a fresh folder and copy `drivers/` across. Every command prints the installed version with `--version` (for example `idb-prepare 0.3.0`).
+
+The launchers use `JAVA_HOME` when it is set and otherwise `java` from the `PATH`; Java 25 or later is required. Extra JVM options can be passed in `IDB_JAVA_OPTS`. JDBC drivers are not distributed, so their licenses never constrain the Apache 2.0 distribution: download the driver for your engine (PostgreSQL, Oracle, ...) from its vendor and copy the jar into `drivers/`. Without it, the commands fail with a message pointing to that folder.
+
+### Building and releasing
+
+`mvn package` builds the distribution folder `target/initiumdb-<version>-dist/initiumdb/` and the archives `target/initiumdb-<version>-dist.zip` and `.tar.gz`. On the `development` branch the version is `X.Y.Z-SNAPSHOT` (a build in progress); a release has no suffix.
+
+To release from `main` (for example `0.3.0`):
+
+1. Merge `development` into `main`.
+2. On `main`, set the version and commit it: `mvn versions:set -DnewVersion=0.3.0 -DgenerateBackupPoms=false`, then `git commit -am "Release 0.3.0"`.
+3. Tag and push: `git tag v0.3.0 && git push origin main v0.3.0`.
+4. The `Release` workflow (`.github/workflows/release.yml`) checks that the tag equals the pom version, runs `mvn clean verify` and publishes the GitHub release with the archives and `SHA256SUMS`.
+5. Back on `development`, merge `main` and move to the next snapshot: `mvn versions:set -DnewVersion=0.4.0-SNAPSHOT -DgenerateBackupPoms=false`.
+
+Before step 2, rename the `Unreleased` heading of `CHANGELOG.md` to the version being released.
 
 ## Commands
 
@@ -57,7 +84,7 @@ idb-crypt --environment dev [--case path/to/testdata/regression] [--config-dir d
 
 The `--environment` argument selects `<environment>.yml` in the configuration directory, which is `~/.initiumdb` unless `--config-dir` is given.
 
-Every command accepts `--help` (or `-h`), which prints its usage to standard output and exits with code 0 without touching any file.
+Every command accepts `--help` (or `-h`), which prints its usage, and `--version`, which prints the installed version; both write to standard output and exit with code 0 without touching any file.
 
 ### `idb-capture`
 
@@ -83,7 +110,7 @@ The dataset is read as a stream and never held fully in memory, so a malformed X
 
 The initial dataset operation is DBUnit **`REFRESH`**: update matching rows and insert missing rows according to DBUnit's key matching. `REFRESH` **does not delete unrelated or extra rows**, so `idb-prepare` does not promise to restore an entire database or table to an exact snapshot. Optional SQL hooks can perform case-specific cleanup when needed.
 
-On **Oracle**, DBUnit's `REFRESH` would cost two round trips per row (a `SELECT COUNT(*)` and then an `UPDATE` or `INSERT`), so the Oracle profile applies the same semantics with a `MERGE` per row sent in JDBC batches of 500, matching rows by the primary key read from the database (a table without a primary key is rejected). One difference: an attribute missing from a row means `NULL` (Flat XML does not write nulls) and overwrites the stored value, where `REFRESH` would leave it unchanged. Tables with LOB or engine-specific column types are applied with DBUnit's own `REFRESH`. `--refresh dbunit` forces DBUnit's original `REFRESH` on every engine (the default, `--refresh optimized`, uses the engine's faster operation when it has one), which allows comparing both. The output reports elapsed time per hook, per table, for the whole dataset (with the operation used) and per alias; the per-table time includes applying its rows, because the file is read as fast as the database accepts it.
+On **Oracle** and **PostgreSQL**, DBUnit's `REFRESH` would cost two round trips per row (a `SELECT COUNT(*)` and then an `UPDATE` or `INSERT`), so those profiles apply the same semantics with one upsert per row sent in JDBC batches of 500 (`MERGE` on Oracle, `INSERT ... ON CONFLICT DO UPDATE` on PostgreSQL), matching rows by the primary key read from the database (a table without a primary key is rejected). One difference: an attribute missing from a row means `NULL` (Flat XML does not write nulls) and overwrites the stored value, where `REFRESH` would leave it unchanged. Tables with LOB or engine-specific column types are applied with DBUnit's own `REFRESH`. `--refresh dbunit` forces DBUnit's original `REFRESH` on every engine (the default, `--refresh optimized`, uses the engine's faster operation when it has one), which allows comparing both. The output reports elapsed time per hook, per table, for the whole dataset (with the operation used) and per alias; the per-table time includes applying its rows, because the file is read as fast as the database accepts it.
 
 SQL hooks (`<ALIAS>.pre.sql`, `<ALIAS>.post.sql`) run in **autocommit**, exactly as written: each statement is committed as it runs, and a hook that contains its own `COMMIT`, `ROLLBACK` or DDL behaves as the engine defines. The dataset is applied in **one short transaction** (all or nothing), because DBUnit issues its statements row by row and autocommit would otherwise commit once per row. Nothing is rolled back across hooks, the dataset or steps: a failure stops the run, previously committed changes remain, and there is **no distributed transaction**. Re-running the entire `idb-prepare` command is the recovery strategy, so SQL hooks must be **idempotent**, or guarded so that a repeat does nothing (see [Conditional statements](#conditional-statements)): for example `DELETE` then `INSERT`, `MERGE`, or `TRUNCATE`; avoid relative updates such as `balance = balance + 100` and statements that advance sequences.
 

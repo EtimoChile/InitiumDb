@@ -8,7 +8,9 @@
     <format>tar.gz</format>
     <format>dir</format>
   </formats>
+  <!-- The folder has no version in its name, so upgrading never changes the install path. -->
   <includeBaseDirectory>true</includeBaseDirectory>
+  <baseDirectory>initiumdb</baseDirectory>
   <fileSets>
     <fileSet>
       <directory>src/main/dist/drivers</directory>

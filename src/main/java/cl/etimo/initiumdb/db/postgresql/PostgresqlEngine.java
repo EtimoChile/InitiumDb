@@ -7,6 +7,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import org.dbunit.database.DatabaseConfig;
 import org.dbunit.ext.postgresql.PostgresqlDataTypeFactory;
+import org.dbunit.operation.DatabaseOperation;
 
 /** PostgreSQL profile. */
 public final class PostgresqlEngine implements DatabaseEngine {
@@ -21,6 +22,11 @@ public final class PostgresqlEngine implements DatabaseEngine {
     config.setProperty(DatabaseConfig.PROPERTY_DATATYPE_FACTORY, new PostgresqlDataTypeFactory());
     config.setProperty(DatabaseConfig.PROPERTY_ESCAPE_PATTERN, "\"?\"");
     config.setProperty(DatabaseConfig.FEATURE_CASE_SENSITIVE_TABLE_NAMES, true);
+  }
+
+  @Override
+  public DatabaseOperation refreshOperation() {
+    return new PostgresqlUpsertOperation();
   }
 
   @Override

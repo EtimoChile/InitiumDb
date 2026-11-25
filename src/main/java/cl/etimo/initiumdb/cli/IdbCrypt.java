@@ -39,6 +39,10 @@ public final class IdbCrypt {
       out.println(USAGE);
       return 0;
     }
+    if (CliArgs.isVersion(args)) {
+      out.println(Version.line("idb-crypt"));
+      return 0;
+    }
     try {
       CliArgs cli =
           CliArgs.parse(args, Set.of("--case", "--environment", "--config-dir"), Set.of());

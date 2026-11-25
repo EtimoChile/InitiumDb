@@ -117,8 +117,20 @@ final class Fixture {
     return CliRun.capture(env, home, args());
   }
 
+  /**
+   * H2 stands in for PostgreSQL here but does not support {@code ON CONFLICT DO UPDATE}, so the
+   * runs use DBUnit's own {@code REFRESH}; the PostgreSQL upsert is covered by the container test.
+   */
   CliRun prepare() {
-    return CliRun.prepare(env, home, args());
+    return CliRun.prepare(env, home, prepareArgs());
+  }
+
+  /** The common arguments plus the refresh mode H2 supports. */
+  String[] prepareArgs() {
+    String[] args = java.util.Arrays.copyOf(args(), args().length + 2);
+    args[args.length - 2] = "--refresh";
+    args[args.length - 1] = "dbunit";
+    return args;
   }
 
   private static void writeFile(Path file, String content) {

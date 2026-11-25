@@ -11,5 +11,5 @@
 - Verified on JDK 25.0.2 (`C:\Util\Java\jdk-25.0.2`; the default `JAVA_HOME` is JDK 1.7, so set it explicitly): `mvn verify` (59 unit tests, 3 `DistributionIT`) and `mvn spotless:check` pass.
 - JDBC drivers are user-supplied (`drivers/` folder, DEC-008).
 - Packaging: `mvn package` builds the folder distribution and archives (DEC-008); `DistributionIT` (Failsafe, in `mvn verify`) runs the launchers; the shell launchers were checked on Git Bash only, not on a real Unix.
-- Oracle applies the dataset with `OracleMergeOperation` (batched `MERGE`, DEC-011), checked on H2 with casted binds only; not yet run against a real Oracle (`-Poracle-integration` should be run once).
+- Oracle and PostgreSQL apply the dataset with batched upserts (`BatchedUpsertOperation`, DEC-011): `MERGE` on Oracle, `INSERT ... ON CONFLICT` on PostgreSQL. Both are checked against real containers (opt-in profiles) and Oracle also on H2; timing on the user's Oracle case: 520 s with `REFRESH` vs 10 s.
 - Opt-in integration tests against disposable containers (Docker required): `-Ppostgresql-integration` and `-Poracle-integration`, 2 tests each, both pass.

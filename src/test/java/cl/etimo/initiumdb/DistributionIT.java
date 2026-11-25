@@ -75,6 +75,16 @@ class DistributionIT {
   }
 
   @Test
+  void versionPrintsThePackagedVersionThroughTheLauncher() throws Exception {
+    // Spec: README.md > Installation (--version)
+    // When
+    Result result = launch("idb-prepare", "--version");
+    // Then
+    assertThat(result.exitCode()).isZero();
+    assertThat(result.output().trim()).matches("idb-prepare \\d+\\.\\d+\\.\\d+(-SNAPSHOT)?");
+  }
+
+  @Test
   void idbInitCreatesTheProjectFilesThroughTheLauncher() throws Exception {
     // Spec: README.md > Installation; Initialization
     // When

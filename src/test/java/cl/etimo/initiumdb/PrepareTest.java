@@ -397,7 +397,7 @@ class PrepareTest {
         CliRun.crypt(
             Map.of(), fx.home, "--environment", "dev", "--config-dir", fx.configDir.toString());
     // When
-    CliRun run = CliRun.prepare(Map.of(), fx.home, fx.args());
+    CliRun run = CliRun.prepare(Map.of(), fx.home, fx.prepareArgs());
     // Then
     assertThat(crypt.exitCode()).isZero();
     assertThat(run.exitCode()).isZero();
@@ -410,7 +410,7 @@ class PrepareTest {
     // Given
     fx.write("../cfg/dev.secrets.json", "{\"CRM\": \"" + Fixture.PASSWORD + "\"}");
     // When
-    CliRun run = CliRun.prepare(Map.of(), fx.home, fx.args());
+    CliRun run = CliRun.prepare(Map.of(), fx.home, fx.prepareArgs());
     // Then
     assertThat(run.exitCode()).as(run.err()).isZero();
     assertThat(fx.read("../cfg/dev.secrets.json"))
@@ -426,7 +426,7 @@ class PrepareTest {
     String token = SecretCipher.encrypt(Fixture.PASSWORD, new byte[32]);
     fx.write("../cfg/dev.secrets.json", "{\"CRM\": \"" + token + "\"}");
     // When
-    CliRun run = CliRun.prepare(Map.of(), fx.home, fx.args());
+    CliRun run = CliRun.prepare(Map.of(), fx.home, fx.prepareArgs());
     // Then
     assertThat(run.exitCode()).isEqualTo(1);
     assertThat(run.err()).contains("No master key");

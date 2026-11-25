@@ -177,7 +177,7 @@ class ConfigurationTest {
             "IDB_CRM_USER",
             "sa");
     // When
-    CliRun run = CliRun.prepare(env, fx.home, fx.args());
+    CliRun run = CliRun.prepare(env, fx.home, fx.prepareArgs());
     // Then
     assertThat(run.exitCode()).as(run.err()).isZero();
   }
@@ -194,7 +194,7 @@ class ConfigurationTest {
     java.util.Map<String, String> env =
         java.util.Map.of("IDB_CREDENTIAL_CRM", Fixture.PASSWORD, "IDB_CRM_USER", "sa");
     // When
-    CliRun run = CliRun.prepare(env, fx.home, fx.args());
+    CliRun run = CliRun.prepare(env, fx.home, fx.prepareArgs());
     // Then
     assertThat(run.exitCode()).as(run.err()).isZero();
   }
@@ -207,7 +207,7 @@ class ConfigurationTest {
     java.util.Map<String, String> env =
         java.util.Map.of("IDB_CRM_ENGINE", "postgresql", "IDB_CRM_USER", "sa");
     // When
-    CliRun run = CliRun.prepare(env, fx.home, fx.args());
+    CliRun run = CliRun.prepare(env, fx.home, fx.prepareArgs());
     // Then
     assertThat(run.exitCode()).isEqualTo(1);
     assertThat(run.err()).contains("IDB_CRM_URL");
