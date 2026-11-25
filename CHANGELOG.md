@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## 0.5.0 - 2026-11-25
 
 - Adopt the Apache License 2.0 (`LICENSE`, `NOTICE`, `LICENSE-DUAL.md`, `COMMERCIAL-EDITION-NOTICE.md`, `THIRD_PARTY_LICENSES.md`) and the collaboration model of the Etimo projects (`CONTRIBUTING.md`, `DEVELOPMENT.md`, `.github/CODEOWNERS`).
