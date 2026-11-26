@@ -228,7 +228,9 @@ Example `CRM.dataset.xml`:
 
 Flat XML does not write `NULL` values, so a column that is `NULL` in every captured row would not appear at all. `idb-capture` therefore also declares the columns of each table in an internal DTD (`<!DOCTYPE dataset [<!ATTLIST CUSTOMER CUSTOMER_ID CDATA #IMPLIED ...>]>`) right after the XML declaration, and `idb-prepare` treats every declared column as part of the table: it is applied (as `NULL`) instead of being left unchanged. Datasets without the declaration (written by earlier versions or by hand) still load; their columns are the attributes found in the rows.
 
-DBUnit Flat XML is the intended interchange format. Actual handling of nulls, types, binary data, generated keys and table metadata must be verified for each supported database engine. The implementation must preserve dataset table order when applying `REFRESH`; it must not silently invoke a dependency-based reordering strategy.
+Dates and times without a time zone (PostgreSQL `timestamp`, Oracle `DATE` and `TIMESTAMP`) are written and applied exactly as stored, whatever the time zone of the machine that runs InitiumDb, including wall-clock times that do not exist there because of a daylight-saving change. They are written as `yyyy-MM-dd HH:mm:ss.f` (`2024-09-08 00:30:00.0`, fraction without trailing zeros); a hand-written value may also omit the seconds or the fraction, or use an ISO `T`. Types with a time zone (`timestamptz`, `TIMESTAMP WITH TIME ZONE`) keep their instant.
+
+DBUnit Flat XML is the intended interchange format. Actual handling of nulls, types, binary data, generated keys and table metadata must be verified for each supported database engine (verified so far on PostgreSQL and Oracle containers, both apply paths: nulls, text with line breaks, tabs, outer spaces, markup and non-ASCII characters, `CHAR` padding, and the date and time types above). The implementation must preserve dataset table order when applying `REFRESH`; it must not silently invoke a dependency-based reordering strategy.
 
 ## Environment configuration
 

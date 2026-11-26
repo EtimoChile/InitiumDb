@@ -1,11 +1,14 @@
 package cl.etimo.initiumdb.db.oracle;
 
 import cl.etimo.initiumdb.db.DatabaseEngine;
+import cl.etimo.initiumdb.db.LocalTimestampDataType;
 import cl.etimo.initiumdb.db.SqlIdentifiers;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
 import org.dbunit.database.DatabaseConfig;
+import org.dbunit.dataset.datatype.DataType;
+import org.dbunit.dataset.datatype.DataTypeException;
 import org.dbunit.ext.oracle.Oracle10DataTypeFactory;
 import org.dbunit.operation.DatabaseOperation;
 
@@ -19,7 +22,7 @@ public final class OracleEngine implements DatabaseEngine {
 
   @Override
   public void configure(DatabaseConfig config) {
-    config.setProperty(DatabaseConfig.PROPERTY_DATATYPE_FACTORY, new Oracle10DataTypeFactory());
+    config.setProperty(DatabaseConfig.PROPERTY_DATATYPE_FACTORY, new DataTypes());
     config.setProperty(DatabaseConfig.PROPERTY_ESCAPE_PATTERN, "\"?\"");
     config.setProperty(DatabaseConfig.FEATURE_CASE_SENSITIVE_TABLE_NAMES, true);
     config.setProperty(DatabaseConfig.FEATURE_SKIP_ORACLE_RECYCLEBIN_TABLES, true);
@@ -28,6 +31,15 @@ public final class OracleEngine implements DatabaseEngine {
   @Override
   public DatabaseOperation refreshOperation() {
     return new OracleMergeOperation();
+  }
+
+  /** DBUnit's Oracle types, with {@code DATE} and {@code TIMESTAMP} free of the JVM's time zone. */
+  private static final class DataTypes extends Oracle10DataTypeFactory {
+    @Override
+    public DataType createDataType(int sqlType, String sqlTypeName) throws DataTypeException {
+      return LocalTimestampDataType.withoutTimeZone(
+          super.createDataType(sqlType, sqlTypeName), sqlTypeName);
+    }
   }
 
   @Override

@@ -2,12 +2,15 @@ package cl.etimo.initiumdb.db.postgresql;
 
 import cl.etimo.initiumdb.core.InitiumDbException;
 import cl.etimo.initiumdb.db.DatabaseEngine;
+import cl.etimo.initiumdb.db.LocalTimestampDataType;
 import cl.etimo.initiumdb.db.SqlIdentifiers;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import org.dbunit.database.DatabaseConfig;
+import org.dbunit.dataset.datatype.DataType;
+import org.dbunit.dataset.datatype.DataTypeException;
 import org.dbunit.ext.postgresql.PostgresqlDataTypeFactory;
 import org.dbunit.operation.DatabaseOperation;
 
@@ -21,7 +24,7 @@ public final class PostgresqlEngine implements DatabaseEngine {
 
   @Override
   public void configure(DatabaseConfig config) {
-    config.setProperty(DatabaseConfig.PROPERTY_DATATYPE_FACTORY, new PostgresqlDataTypeFactory());
+    config.setProperty(DatabaseConfig.PROPERTY_DATATYPE_FACTORY, new DataTypes());
     config.setProperty(DatabaseConfig.PROPERTY_ESCAPE_PATTERN, "\"?\"");
     config.setProperty(DatabaseConfig.FEATURE_CASE_SENSITIVE_TABLE_NAMES, true);
   }
@@ -47,6 +50,15 @@ public final class PostgresqlEngine implements DatabaseEngine {
     String identifier = SqlIdentifiers.quote(schema);
     try (Statement statement = connection.createStatement()) {
       statement.execute("SET search_path TO " + identifier);
+    }
+  }
+
+  /** DBUnit's PostgreSQL types, with {@code timestamp} kept free of the JVM's time zone. */
+  private static final class DataTypes extends PostgresqlDataTypeFactory {
+    @Override
+    public DataType createDataType(int sqlType, String sqlTypeName) throws DataTypeException {
+      return LocalTimestampDataType.withoutTimeZone(
+          super.createDataType(sqlType, sqlTypeName), sqlTypeName);
     }
   }
 

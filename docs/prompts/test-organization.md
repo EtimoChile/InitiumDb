@@ -22,3 +22,4 @@ Contract-to-class map (extend as contracts are defined):
 | README > Initialization (`idb-init`) | `ProjectInitializationTest` |
 | README > Local secrets (`idb-crypt`) | `SecretEncryptionTest` |
 | README > Installation (launchers, `lib/`) | `DistributionIT` (Failsafe, runs after `package` in `mvn verify`) |
+| README > Captured dataset (values per type) | `DatasetTypesTest`; per engine `integration/<engine>/*TypeRoundTripTest` |
