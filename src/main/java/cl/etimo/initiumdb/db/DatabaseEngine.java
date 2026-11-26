@@ -26,10 +26,10 @@ public interface DatabaseEngine {
 
   /**
    * The operation that applies a dataset by updating matching rows and inserting missing ones.
-   * Defaults to DBUnit's {@code REFRESH}; an engine may replace it with a faster one that gives the
-   * same result.
+   * Defaults to DBUnit's {@code REFRESH} ({@link DbUnitRefreshOperation}); an engine may replace it
+   * with a faster one that gives the same result.
    */
   default DatabaseOperation refreshOperation() {
-    return DatabaseOperation.REFRESH;
+    return new DbUnitRefreshOperation();
   }
 }

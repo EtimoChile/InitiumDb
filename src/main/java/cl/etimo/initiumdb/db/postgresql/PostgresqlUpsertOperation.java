@@ -54,7 +54,9 @@ final class PostgresqlUpsertOperation extends BatchedUpsertOperation {
       List<String> keys,
       List<String> updatable) {
     StringBuilder sql = new StringBuilder("INSERT INTO ").append(table).append(" (");
-    sql.append(String.join(", ", columns)).append(") VALUES (");
+    // An identity column GENERATED ALWAYS accepts the captured value only with this clause; it
+    // changes nothing for other columns.
+    sql.append(String.join(", ", columns)).append(") OVERRIDING SYSTEM VALUE VALUES (");
     sql.append(String.join(", ", binds)).append(") ON CONFLICT (");
     sql.append(String.join(", ", keys)).append(")");
     if (updatable.isEmpty()) {

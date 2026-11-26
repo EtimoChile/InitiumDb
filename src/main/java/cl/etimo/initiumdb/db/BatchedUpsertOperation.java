@@ -11,7 +11,6 @@ import org.dbunit.database.IDatabaseConnection;
 import org.dbunit.dataset.Column;
 import org.dbunit.dataset.Columns;
 import org.dbunit.dataset.DataSetException;
-import org.dbunit.dataset.DefaultDataSet;
 import org.dbunit.dataset.IDataSet;
 import org.dbunit.dataset.ITable;
 import org.dbunit.dataset.ITableIterator;
@@ -21,7 +20,6 @@ import org.dbunit.dataset.NoSuchColumnException;
 import org.dbunit.dataset.RowOutOfBoundsException;
 import org.dbunit.dataset.datatype.DataType;
 import org.dbunit.operation.AbstractOperation;
-import org.dbunit.operation.DatabaseOperation;
 
 /**
  * Faster replacement for DBUnit's {@code REFRESH} (update existing rows, insert missing ones).
@@ -85,20 +83,24 @@ public abstract class BatchedUpsertOperation extends AbstractOperation {
     if (keys.length == 0) {
       throw new NoPrimaryKeyException(tableName);
     }
-    Column[] columns = new Column[fileColumns.length];
-    for (int i = 0; i < columns.length; i++) {
-      columns[i] = Columns.getColumn(fileColumns[i].getColumnName(), dbMeta.getColumns());
-      if (columns[i] == null) {
-        throw new NoSuchColumnException(tableName, fileColumns[i].getColumnName());
+    List<Column> writable = new ArrayList<>();
+    for (Column fileColumn : fileColumns) {
+      Column column = Columns.getColumn(fileColumn.getColumnName(), dbMeta.getColumns());
+      if (column == null) {
+        throw new NoSuchColumnException(tableName, fileColumn.getColumnName());
+      }
+      if (!DbUnitRefreshOperation.isComputed(column)) {
+        writable.add(column);
       }
     }
+    Column[] columns = writable.toArray(new Column[0]);
     for (Column key : keys) {
       if (Columns.getColumn(key.getColumnName(), columns) == null) {
         throw new NoSuchColumnException(tableName, key.getColumnName() + " (primary key)");
       }
     }
     if (!allBatchable(columns) || !canUpsert(columns, dbMeta.getColumns())) {
-      DatabaseOperation.REFRESH.execute(connection, new DefaultDataSet(table));
+      DbUnitRefreshOperation.refresh(connection, database, table);
       return;
     }
     String sql = upsertSql(connection, tableName, columns, keys);

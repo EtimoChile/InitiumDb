@@ -3,7 +3,9 @@ package cl.etimo.initiumdb.core;
 import cl.etimo.initiumdb.core.CaseConfig.DatabaseStep;
 import cl.etimo.initiumdb.core.SqlScript.Guard;
 import cl.etimo.initiumdb.core.SqlScript.Statement;
+import cl.etimo.initiumdb.db.BatchedUpsertOperation;
 import cl.etimo.initiumdb.db.DatabaseEngine;
+import cl.etimo.initiumdb.db.DbUnitRefreshOperation;
 import cl.etimo.initiumdb.db.Engines;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -127,7 +129,7 @@ public final class PrepareService {
       execute(connection, pre, "pre hook", out);
       long start = System.nanoTime();
       DatabaseOperation operation =
-          mode == RefreshMode.DBUNIT ? DatabaseOperation.REFRESH : engine.refreshOperation();
+          mode == RefreshMode.DBUNIT ? new DbUnitRefreshOperation() : engine.refreshOperation();
       refresh(connection, engine, schema, dataSet, operation);
       out.println(
           "  dataset: "
@@ -135,7 +137,7 @@ public final class PrepareService {
               + " row(s) in "
               + seconds(System.nanoTime() - start)
               + " ("
-              + (operation == DatabaseOperation.REFRESH ? "dbunit" : "optimized")
+              + (operation instanceof BatchedUpsertOperation ? "optimized" : "dbunit")
               + ")");
       execute(connection, post, "post hook", out);
     }

@@ -291,6 +291,14 @@ public final class CaptureService {
     if (e instanceof SQLException sql) {
       return "database error (SQLState " + sql.getSQLState() + "): " + sql.getMessage();
     }
-    return e.getClass().getSimpleName() + ": " + e.getMessage();
+    String text = e.getClass().getSimpleName() + ": " + e.getMessage();
+    // DBUnit wraps the database error in a message that names only the table
+    if (e.getCause() instanceof Exception cause
+        && cause != e
+        && (e.getMessage() == null
+            || !e.getMessage().contains(String.valueOf(cause.getMessage())))) {
+      return text + ": " + describe(cause);
+    }
+    return text;
   }
 }

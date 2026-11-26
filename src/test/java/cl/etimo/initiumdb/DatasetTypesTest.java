@@ -184,6 +184,25 @@ class DatasetTypesTest {
   }
 
   @Test
+  void computedColumnsCapturedWithTheTableAreComputedAgain() {
+    // Spec: README.md > Captured dataset (columns the database computes are not written)
+    // Given: a capture of the whole table, then one row deleted and one changed
+    fx.sql(
+        "CREATE TABLE MEASURE (ID INT PRIMARY KEY, V INT, DOUBLED INT GENERATED ALWAYS AS (V * 2))",
+        "INSERT INTO MEASURE (ID, V) VALUES (1, 21), (2, 4)");
+    fx.write("CRM.queries.yml", "tables:\n  - name: MEASURE\n");
+    assertThat(fx.capture().exitCode()).isZero();
+    assertThat(fx.read("CRM.dataset.xml")).contains("DOUBLED=\"42\"");
+    fx.sql("DELETE FROM MEASURE WHERE ID = 1", "UPDATE MEASURE SET V = 5 WHERE ID = 2");
+    // When
+    CliRun run = fx.prepare();
+    // Then
+    assertThat(run.exitCode()).as(run.err()).isZero();
+    assertThat(fx.value("SELECT LISTAGG(ID || ',' || V || ',' || DOUBLED, ' ') FROM MEASURE"))
+        .isEqualTo("1,21,42 2,4,8");
+  }
+
+  @Test
   void aFloatingPointValueThatIsNotANumberFailsThePrepare() {
     // Spec: README.md > idb-prepare (exit successfully only if every alias completes)
     // Given
