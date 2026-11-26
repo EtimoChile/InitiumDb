@@ -2,20 +2,9 @@ package cl.etimo.initiumdb.db.oracle;
 
 import cl.etimo.initiumdb.db.BatchedUpsertOperation;
 import java.util.List;
-import java.util.function.Function;
-import org.dbunit.dataset.Column;
 
 /** Oracle upsert: one {@code MERGE} per row, sent in JDBC batches. */
 final class OracleMergeOperation extends BatchedUpsertOperation {
-
-  OracleMergeOperation() {
-    super();
-  }
-
-  /** Tests may cast the bind, because not every engine infers the type of a bare {@code ?}. */
-  OracleMergeOperation(Function<Column, String> placeholder) {
-    super(placeholder);
-  }
 
   @Override
   protected String upsertSql(
@@ -28,7 +17,7 @@ final class OracleMergeOperation extends BatchedUpsertOperation {
   }
 
   /** Builds the {@code MERGE}; arguments are already quoted identifiers. */
-  static String mergeSql(
+  private static String mergeSql(
       String table,
       List<String> columns,
       List<String> binds,

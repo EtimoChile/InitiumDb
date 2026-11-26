@@ -6,7 +6,6 @@ import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import java.util.function.Function;
 import org.dbunit.DatabaseUnitException;
 import org.dbunit.database.IDatabaseConnection;
 import org.dbunit.dataset.Column;
@@ -34,22 +33,12 @@ import org.dbunit.operation.DatabaseOperation;
  * the database, a table without a primary key is rejected. One difference: an attribute absent from
  * a row means {@code NULL} (Flat XML does not write nulls), so it overwrites the stored value;
  * {@code REFRESH} would leave it unchanged. Tables with columns of a type that is unsafe to bind in
- * an upsert (LOBs, engine-specific types) are applied with DBUnit's own {@code REFRESH}.
+ * an upsert (LOBs, engine-specific types), or that the engine cannot upsert safely (see {@link
+ * #canUpsert}), are applied with DBUnit's own {@code REFRESH}.
  */
 public abstract class BatchedUpsertOperation extends AbstractOperation {
 
   public static final int BATCH_SIZE = 500;
-
-  private final Function<Column, String> placeholder;
-
-  protected BatchedUpsertOperation() {
-    this(column -> "?");
-  }
-
-  /** Tests may cast the bind, because not every engine infers the type of a bare {@code ?}. */
-  protected BatchedUpsertOperation(Function<Column, String> placeholder) {
-    this.placeholder = placeholder;
-  }
 
   private static final Set<Integer> BATCHABLE_TYPES =
       Set.of(
@@ -107,7 +96,7 @@ public abstract class BatchedUpsertOperation extends AbstractOperation {
         throw new NoSuchColumnException(tableName, key.getColumnName() + " (primary key)");
       }
     }
-    if (!allBatchable(columns)) {
+    if (!allBatchable(columns) || !canUpsert(columns, dbMeta.getColumns())) {
       DatabaseOperation.REFRESH.execute(connection, new DefaultDataSet(table));
       return;
     }
@@ -148,6 +137,15 @@ public abstract class BatchedUpsertOperation extends AbstractOperation {
     }
   }
 
+  /**
+   * Whether the engine's upsert is safe for a table whose dataset carries only {@code present} of
+   * the table's {@code all} columns. When it is not, the table is applied with DBUnit's own {@code
+   * REFRESH}. The default is always safe.
+   */
+  protected boolean canUpsert(Column[] present, Column[] all) {
+    return true;
+  }
+
   private static boolean allBatchable(Column[] columns) {
     for (Column column : columns) {
       if (!BATCHABLE_TYPES.contains(column.getDataType().getSqlType())) {
@@ -167,7 +165,7 @@ public abstract class BatchedUpsertOperation extends AbstractOperation {
     for (Column column : columns) {
       String name = getQualifiedName(null, column.getColumnName(), connection);
       all.add(name);
-      binds.add(placeholder.apply(column));
+      binds.add("?");
       if (Columns.getColumn(column.getColumnName(), keys) != null) {
         keyNames.add(name);
       } else {
