@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## 0.5.1 - 2026-11-25
 
 - Update dependencies with published security fixes: jackson-databind and jackson-dataformat-yaml 2.18.12, PostgreSQL JDBC driver used for builds and tests 42.7.12 (drivers are not distributed, so users should update theirs too), AssertJ 3.27.7 (tests only).
