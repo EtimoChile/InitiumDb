@@ -6,8 +6,10 @@ import cl.etimo.initiumdb.core.QueriesConfig.TableQuery;
 import cl.etimo.initiumdb.db.DatabaseEngine;
 import cl.etimo.initiumdb.db.Engines;
 import java.io.IOException;
-import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.io.PrintStream;
+import java.io.Writer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -162,8 +164,10 @@ public final class CaptureService {
     Path withDtd = Files.createTempFile(absolute.getParent(), ".idb-capture-", ".tmp");
     try {
       Map<String, Set<String>> columns = new LinkedHashMap<>();
-      try (OutputStream stream = Files.newOutputStream(temp)) {
-        FlatXmlWriter writer = new FlatXmlWriter(stream);
+      try (Writer stream =
+          new SurrogatePairWriter(
+              new OutputStreamWriter(Files.newOutputStream(temp), StandardCharsets.UTF_8))) {
+        FlatXmlWriter writer = new FlatXmlWriter(stream, StandardCharsets.UTF_8);
         writer.startDataSet();
         for (TableQuery table : queries.tables()) {
           long start = System.nanoTime();
@@ -224,6 +228,7 @@ public final class CaptureService {
           Object[] values = new Object[columns.length];
           for (int i = 0; i < columns.length; i++) {
             values[i] = columns[i].getDataType().getSqlValue(i + 1, rs);
+            requireXmlText(values[i], table.name(), columns[i].getColumnName(), rows + 1);
           }
           writer.row(values);
           rows++;
@@ -232,6 +237,44 @@ public final class CaptureService {
         return rows;
       }
     }
+  }
+
+  /**
+   * XML 1.0 cannot hold most control characters, not even as character references, so a dataset
+   * holding one could not be read by {@code idb-prepare}. The value itself is not shown: it may be
+   * personal data.
+   */
+  private static void requireXmlText(Object value, String table, String column, long row) {
+    if (!(value instanceof String text)) {
+      return;
+    }
+    for (int i = 0; i < text.length(); ) {
+      int c = text.codePointAt(i);
+      if (!isXmlChar(c)) {
+        throw new InitiumDbException(
+            "Table '"
+                + table
+                + "', column '"
+                + column
+                + "', row "
+                + row
+                + " holds character "
+                + String.format(java.util.Locale.ROOT, "U+%04X", c)
+                + ", which a Flat XML dataset cannot store; remove or replace it in the query"
+                + " (for example with REPLACE).");
+      }
+      i += Character.charCount(c);
+    }
+  }
+
+  /** The {@code Char} production of XML 1.0; a lone surrogate reaches here as itself. */
+  private static boolean isXmlChar(int c) {
+    return c == 0x9
+        || c == 0xA
+        || c == 0xD
+        || (c >= 0x20 && c <= 0xD7FF)
+        || (c >= 0xE000 && c <= 0xFFFD)
+        || (c >= 0x10000 && c <= 0x10FFFF);
   }
 
   /** A SQL failure that names what was running and the statement itself (trusted project SQL). */
@@ -248,6 +291,14 @@ public final class CaptureService {
     if (e instanceof SQLException sql) {
       return "database error (SQLState " + sql.getSQLState() + "): " + sql.getMessage();
     }
-    return e.getClass().getSimpleName() + ": " + e.getMessage();
+    String text = e.getClass().getSimpleName() + ": " + e.getMessage();
+    // DBUnit wraps the database error in a message that names only the table
+    if (e.getCause() instanceof Exception cause
+        && cause != e
+        && (e.getMessage() == null
+            || !e.getMessage().contains(String.valueOf(cause.getMessage())))) {
+      return text + ": " + describe(cause);
+    }
+    return text;
   }
 }

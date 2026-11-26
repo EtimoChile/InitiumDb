@@ -71,8 +71,23 @@ final class DatasetColumns {
     }
   }
 
+  /**
+   * The JDK's XML parser counts every predefined reference ({@code &amp;}, {@code &lt;}, {@code
+   * &quot;}, ...) against entity size limits, so a long value full of markup characters (a JSON or
+   * XML document stored in a column, for example) failed with {@code JAXP00010003}. Those limits
+   * guard against expanding declared entities, which {@link #scan} rejects before any row is
+   * applied, so they are lifted for this process: DBUnit's own parser reads them from system
+   * properties. Limits on the number of expansions stay as configured.
+   */
+  private static final String[] ENTITY_SIZE_LIMITS = {
+    "jdk.xml.maxGeneralEntitySizeLimit", "jdk.xml.totalEntitySizeLimit"
+  };
+
   /** Reads the whole file once, streaming, and returns the metadata DBUnit needs to produce it. */
   static IDataSet scan(Path file) throws DataSetException {
+    for (String limit : ENTITY_SIZE_LIMITS) {
+      System.setProperty(limit, "0");
+    }
     Map<String, Set<String>> columns = new LinkedHashMap<>();
     Handler handler = new Handler(columns);
     try {
@@ -140,9 +155,18 @@ final class DatasetColumns {
     public void elementDecl(String name, String model) {}
 
     @Override
-    public void internalEntityDecl(String name, String value) {}
+    public void internalEntityDecl(String name, String value) throws SAXException {
+      throw entitiesNotAllowed(name);
+    }
 
     @Override
-    public void externalEntityDecl(String name, String publicId, String systemId) {}
+    public void externalEntityDecl(String name, String publicId, String systemId)
+        throws SAXException {
+      throw entitiesNotAllowed(name);
+    }
+
+    private static SAXException entitiesNotAllowed(String name) {
+      return new SAXException("declares entity '" + name + "'; datasets may not declare entities");
+    }
   }
 }

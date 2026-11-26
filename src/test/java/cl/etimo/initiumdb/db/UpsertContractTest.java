@@ -161,7 +161,8 @@ class UpsertContractTest {
     // Then
     assertThat(statements)
         .containsExactly(
-            "INSERT INTO \"PUBLIC\".\"ITEM\" (\"ID\", \"NAME\", \"QTY\") VALUES (?, ?, ?) ON"
+            "INSERT INTO \"PUBLIC\".\"ITEM\" (\"ID\", \"NAME\", \"QTY\") OVERRIDING SYSTEM VALUE"
+                + " VALUES (?, ?, ?) ON"
                 + " CONFLICT (\"ID\") DO UPDATE SET \"NAME\" = EXCLUDED.\"NAME\", \"QTY\" ="
                 + " EXCLUDED.\"QTY\"");
   }
@@ -183,7 +184,8 @@ class UpsertContractTest {
     // Then
     assertThat(statements)
         .containsExactly(
-            "INSERT INTO \"PUBLIC\".\"ALL_KEY\" (\"ID\") VALUES (?) ON CONFLICT (\"ID\") DO"
+            "INSERT INTO \"PUBLIC\".\"ALL_KEY\" (\"ID\") OVERRIDING SYSTEM VALUE VALUES (?) ON"
+                + " CONFLICT (\"ID\") DO"
                 + " NOTHING");
   }
 
