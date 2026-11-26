@@ -234,7 +234,11 @@ Text may hold any character, including emoji and other characters outside the Ba
 
 Binary values (PostgreSQL `bytea`, Oracle `RAW` and `BLOB`) are written in Base64 and come back byte for byte; large values (`text`, `bytea`, `CLOB`, `NCLOB`, `BLOB` of several megabytes) are written and applied whole. On Oracle an empty `BLOB` is applied as `NULL`: the dataset keeps it as an empty attribute (`V=""`), but Oracle stores a zero-length value it is sent as `NULL`, as it does with `''`.
 
-DBUnit Flat XML is the intended interchange format. Actual handling of nulls, types, binary data, generated keys and table metadata must be verified for each supported database engine (verified so far on PostgreSQL and Oracle containers, both apply paths: nulls, text with line breaks, tabs, outer spaces, markup, non-ASCII characters and emoji, `CHAR` padding, the date and time types above, and the binary and large values above). The implementation must preserve dataset table order when applying `REFRESH`; it must not silently invoke a dependency-based reordering strategy.
+Numbers keep every digit: PostgreSQL `numeric` and Oracle `NUMBER` (with or without precision, up to 38 digits, from 1E-130 to below 1E126) and Oracle `FLOAT` as exact decimals; binary floating point (PostgreSQL `double precision` and `real`, Oracle `BINARY_DOUBLE` and `BINARY_FLOAT`) bit for bit, written as the shortest decimal that reads back to the same value (`0.1`, `4.9E-324`, `-0.0`), plus `NaN`, `Infinity` and `-Infinity` (also accepted in PostgreSQL `numeric`).
+
+PostgreSQL types that have no JDBC equivalent (`json`, `jsonb`, arrays, enum types, `interval`, `inet`, `cidr`, ...) are written in PostgreSQL's own text form (`{1,NULL,-3}`, `1 year 2 mons`) and applied by letting PostgreSQL convert that text, as it would a literal; `json` keeps its spacing and key order. `boolean` and `uuid` round-trip too.
+
+DBUnit Flat XML is the intended interchange format. Actual handling of nulls, types, binary data, generated keys and table metadata must be verified for each supported database engine (verified so far on PostgreSQL and Oracle containers, both apply paths: nulls, text with line breaks, tabs, outer spaces, markup, non-ASCII characters and emoji, `CHAR` padding, the date and time types above, the binary and large values above, the numbers above, and the PostgreSQL types above). The implementation must preserve dataset table order when applying `REFRESH`; it must not silently invoke a dependency-based reordering strategy.
 
 ## Environment configuration
 

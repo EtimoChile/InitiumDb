@@ -19,6 +19,7 @@ import org.dbunit.dataset.ITableMetaData;
 import org.dbunit.dataset.NoPrimaryKeyException;
 import org.dbunit.dataset.NoSuchColumnException;
 import org.dbunit.dataset.RowOutOfBoundsException;
+import org.dbunit.dataset.datatype.DataType;
 import org.dbunit.operation.AbstractOperation;
 import org.dbunit.operation.DatabaseOperation;
 
@@ -146,9 +147,17 @@ public abstract class BatchedUpsertOperation extends AbstractOperation {
     return true;
   }
 
-  private static boolean allBatchable(Column[] columns) {
+  /**
+   * Whether a column of this type is safe to bind in the engine's upsert. The default accepts the
+   * standard scalar types; an engine may accept its own types.
+   */
+  protected boolean isBatchable(DataType type) {
+    return BATCHABLE_TYPES.contains(type.getSqlType());
+  }
+
+  private boolean allBatchable(Column[] columns) {
     for (Column column : columns) {
-      if (!BATCHABLE_TYPES.contains(column.getDataType().getSqlType())) {
+      if (!isBatchable(column.getDataType())) {
         return false;
       }
     }

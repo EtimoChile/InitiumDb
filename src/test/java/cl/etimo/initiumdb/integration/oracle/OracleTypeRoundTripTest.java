@@ -315,4 +315,71 @@ class OracleTypeRoundTripTest {
     String large = "Ωmega ñandú 😀 \"quoted\"\n".repeat(50_000);
     assertThat(boundRoundTrip("NCLOB", large, refresh)).isEqualTo(large);
   }
+
+  // ---- numbers ----
+
+  @ParameterizedTest
+  @ValueSource(strings = {"optimized", "dbunit"})
+  void numberKeepsEveryDigit(String refresh) throws Exception {
+    // Spec: README.md > "Captured dataset" (types must be verified per engine)
+    assertRoundTrip(
+        "NUMBER(38,10)", "-1234567890123456789012345678.0123456789", "TO_CHAR(%s)", refresh);
+    assertRoundTrip("NUMBER(12,4)", "5.1", "TO_CHAR(%s)", refresh);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"optimized", "dbunit"})
+  void numberWithoutPrecisionKeepsVeryLargeAndVerySmallValues(String refresh) throws Exception {
+    // Spec: README.md > "Captured dataset" (types must be verified per engine)
+    // TO_CHAR rounds to 40 digits, so the comparison also checks the value itself
+    String exact = "TO_CHAR(%1$s) || '|' || CASE WHEN %1$s = %2$s THEN 'same' END";
+    for (String value :
+        new String[] {
+          "12345678901234567890123456789012345678",
+          "-0.00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
+          "9.99999999999999999999999999999999999999E125",
+          "123.456"
+        }) {
+      assertRoundTrip("NUMBER", value, exact.replace("%2$s", value), refresh);
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"optimized", "dbunit"})
+  void integersKeepTheirLimits(String refresh) throws Exception {
+    // Spec: README.md > "Captured dataset" (types must be verified per engine)
+    assertRoundTrip("NUMBER(19)", "-9223372036854775808", "TO_CHAR(%s)", refresh);
+    assertRoundTrip("NUMBER(38)", "99999999999999999999999999999999999999", "TO_CHAR(%s)", refresh);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"optimized", "dbunit"})
+  void binaryFloatingPointValuesKeepEveryBit(String refresh) throws Exception {
+    // Spec: README.md > "Captured dataset" (types must be verified per engine)
+    // A hex dump of the stored bytes shows any change in the last bit
+    String bits = "RAWTOHEX(UTL_RAW.CAST_FROM_BINARY_DOUBLE(%s))";
+    assertRoundTrip("BINARY_DOUBLE", "0.1D", bits, refresh);
+    assertRoundTrip("BINARY_DOUBLE", "1.7976931348623157E308D", bits, refresh);
+    assertRoundTrip("BINARY_DOUBLE", "4.9E-324D", bits, refresh);
+    assertRoundTrip("BINARY_DOUBLE", "-0D", bits, refresh);
+    assertRoundTrip(
+        "BINARY_FLOAT", "0.1F", "RAWTOHEX(UTL_RAW.CAST_FROM_BINARY_FLOAT(%s))", refresh);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"optimized", "dbunit"})
+  void binaryFloatingPointSpecialValuesRoundTrip(String refresh) throws Exception {
+    // Spec: README.md > "Captured dataset" (types must be verified per engine)
+    assertRoundTrip("BINARY_DOUBLE", "BINARY_DOUBLE_NAN", "TO_CHAR(%s)", refresh);
+    assertRoundTrip("BINARY_DOUBLE", "-BINARY_DOUBLE_INFINITY", "TO_CHAR(%s)", refresh);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"optimized", "dbunit"})
+  void floatKeepsItsDecimalDigits(String refresh) throws Exception {
+    // Spec: README.md > "Captured dataset" (types must be verified per engine)
+    assertRoundTrip("FLOAT", "0.1", "TO_CHAR(%s)", refresh);
+    assertRoundTrip(
+        "FLOAT(126)", "1.23456789012345678901234567890123456789", "TO_CHAR(%s)", refresh);
+  }
 }

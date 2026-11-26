@@ -4,9 +4,16 @@ import cl.etimo.initiumdb.db.BatchedUpsertOperation;
 import java.util.List;
 import org.dbunit.dataset.Column;
 import org.dbunit.dataset.Columns;
+import org.dbunit.dataset.datatype.DataType;
 
 /** PostgreSQL upsert: one {@code INSERT ... ON CONFLICT} per row, sent in JDBC batches. */
 final class PostgresqlUpsertOperation extends BatchedUpsertOperation {
+
+  /** Columns kept as PostgreSQL text are bound as untyped parameters, which an upsert accepts. */
+  @Override
+  protected boolean isBatchable(DataType type) {
+    return type instanceof TextCastDataType || super.isBatchable(type);
+  }
 
   /**
    * {@code INSERT ... ON CONFLICT} checks NOT NULL on the proposed row before it looks for the

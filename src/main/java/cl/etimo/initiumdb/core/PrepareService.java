@@ -98,7 +98,8 @@ public final class PrepareService {
                 + seconds(System.nanoTime() - start));
       } catch (InitiumDbException e) {
         throw new InitiumDbException(label + ": " + e.getMessage());
-      } catch (SQLException | DatabaseUnitException | IOException e) {
+      } catch (SQLException | DatabaseUnitException | IOException | RuntimeException e) {
+        // a driver or DBUnit may also fail with an unchecked exception while binding a value
         throw new InitiumDbException(label + ": " + CaptureService.describe(e));
       }
     }

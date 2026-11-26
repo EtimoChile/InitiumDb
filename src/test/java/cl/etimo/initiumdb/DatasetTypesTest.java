@@ -164,6 +164,42 @@ class DatasetTypesTest {
   }
 
   @Test
+  void floatingPointValuesThatADecimalCannotHoldRoundTrip() {
+    // Spec: README.md > Captured dataset (values of each type come back unchanged)
+    // Given: values that DBUnit's decimal conversion rejected or rounded
+    fx.sql(
+        "CREATE TABLE MEASURE (ID INT PRIMARY KEY, V DOUBLE PRECISION)",
+        "INSERT INTO MEASURE VALUES (1, CAST('NaN' AS DOUBLE PRECISION)),"
+            + " (2, CAST('-Infinity' AS DOUBLE PRECISION)), (3, 4.9E-324), (4, 0.1)");
+    fx.write("CRM.queries.yml", "tables:\n  - name: MEASURE\n");
+    String before = fx.value("SELECT LISTAGG(CAST(V AS VARCHAR), '|') FROM MEASURE");
+    assertThat(fx.capture().exitCode()).isZero();
+    fx.sql("DELETE FROM MEASURE");
+    // When
+    CliRun run = fx.prepare();
+    // Then
+    assertThat(run.exitCode()).as(run.err()).isZero();
+    assertThat(fx.read("CRM.dataset.xml")).contains("V=\"NaN\"").contains("V=\"-Infinity\"");
+    assertThat(fx.value("SELECT LISTAGG(CAST(V AS VARCHAR), '|') FROM MEASURE")).isEqualTo(before);
+  }
+
+  @Test
+  void aFloatingPointValueThatIsNotANumberFailsThePrepare() {
+    // Spec: README.md > idb-prepare (exit successfully only if every alias completes)
+    // Given
+    fx.sql(
+        "CREATE TABLE MEASURE (ID INT PRIMARY KEY, V DOUBLE PRECISION)",
+        "INSERT INTO MEASURE VALUES (1, 2.5)");
+    fx.write("CRM.dataset.xml", "<dataset><MEASURE ID=\"1\" V=\"NaNa\"/></dataset>");
+    // When
+    CliRun run = fx.prepare();
+    // Then
+    assertThat(run.exitCode()).isEqualTo(1);
+    assertThat(run.err()).contains("NaNa");
+    assertThat(fx.value("SELECT CAST(V AS VARCHAR) FROM MEASURE WHERE ID = 1")).isEqualTo("2.5");
+  }
+
+  @Test
   void aTimestampThatIsNotADateFailsThePrepare() {
     // Spec: README.md > idb-prepare (exit successfully only if every alias completes)
     // Given

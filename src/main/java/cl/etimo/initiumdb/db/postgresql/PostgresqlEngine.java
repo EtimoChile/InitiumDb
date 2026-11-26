@@ -2,12 +2,16 @@ package cl.etimo.initiumdb.db.postgresql;
 
 import cl.etimo.initiumdb.core.InitiumDbException;
 import cl.etimo.initiumdb.db.DatabaseEngine;
+import cl.etimo.initiumdb.db.FloatingPointDataType;
 import cl.etimo.initiumdb.db.LocalTimestampDataType;
 import cl.etimo.initiumdb.db.SqlIdentifiers;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Types;
+import java.util.Locale;
+import java.util.Set;
 import org.dbunit.database.DatabaseConfig;
 import org.dbunit.dataset.datatype.DataType;
 import org.dbunit.dataset.datatype.DataTypeException;
@@ -53,12 +57,34 @@ public final class PostgresqlEngine implements DatabaseEngine {
     }
   }
 
-  /** DBUnit's PostgreSQL types, with {@code timestamp} kept free of the JVM's time zone. */
+  /**
+   * DBUnit's PostgreSQL types, with {@code timestamp} kept free of the JVM's time zone, floating
+   * point and {@code numeric} accepting {@code NaN} and the infinities, and the types DBUnit does
+   * not know (arrays, enums, {@code json}, {@code interval}, ...) kept as PostgreSQL's own text.
+   */
   private static final class DataTypes extends PostgresqlDataTypeFactory {
+
+    /** The names pgjdbc reports for character columns; any other {@code VARCHAR} is an enum. */
+    private static final Set<String> TEXT_TYPES =
+        Set.of("varchar", "text", "bpchar", "char", "name");
+
     @Override
     public DataType createDataType(int sqlType, String sqlTypeName) throws DataTypeException {
-      return LocalTimestampDataType.withoutTimeZone(
-          super.createDataType(sqlType, sqlTypeName), sqlTypeName);
+      DataType created = super.createDataType(sqlType, sqlTypeName);
+      if (created == DataType.NUMERIC || created == DataType.DECIMAL) {
+        return NumericDataType.INSTANCE;
+      }
+      if (created == DataType.UNKNOWN || sqlType == Types.ARRAY || isEnum(sqlType, sqlTypeName)) {
+        return TextCastDataType.INSTANCE;
+      }
+      return FloatingPointDataType.replacing(
+          LocalTimestampDataType.withoutTimeZone(created, sqlTypeName));
+    }
+
+    private static boolean isEnum(int sqlType, String sqlTypeName) {
+      return sqlType == Types.VARCHAR
+          && sqlTypeName != null
+          && !TEXT_TYPES.contains(sqlTypeName.toLowerCase(Locale.ROOT));
     }
   }
 

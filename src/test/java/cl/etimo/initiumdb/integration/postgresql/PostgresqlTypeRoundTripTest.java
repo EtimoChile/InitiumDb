@@ -280,4 +280,108 @@ class PostgresqlTypeRoundTripTest {
         "length(%1$s) || ':' || md5(%1$s)",
         refresh);
   }
+
+  // ---- numbers ----
+
+  @ParameterizedTest
+  @ValueSource(strings = {"optimized", "dbunit"})
+  void numericKeepsEveryDigitAndItsScale(String refresh) throws Exception {
+    // Spec: README.md > "Captured dataset" (types must be verified per engine)
+    assertRoundTrip("NUMERIC(38,10)", "'-1234567890123456789012345678.0123456789'", refresh);
+    assertRoundTrip("NUMERIC(12,4)", "'5.1000'", refresh);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"optimized", "dbunit"})
+  void numericWithoutPrecisionKeepsVeryLargeAndVerySmallValues(String refresh) throws Exception {
+    // Spec: README.md > "Captured dataset" (types must be verified per engine)
+    assertRoundTrip("NUMERIC", "'123456789012345678901234567890123456789012345678901'", refresh);
+    assertRoundTrip("NUMERIC", "'0.000000000000000000000000000000000001'", refresh);
+    assertRoundTrip("NUMERIC", "'1E+40'", refresh);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"optimized", "dbunit"})
+  void integersKeepTheirLimits(String refresh) throws Exception {
+    // Spec: README.md > "Captured dataset" (types must be verified per engine)
+    assertRoundTrip("SMALLINT", "-32768", refresh);
+    assertRoundTrip("INTEGER", "2147483647", refresh);
+    assertRoundTrip("BIGINT", "-9223372036854775808", refresh);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"optimized", "dbunit"})
+  void floatingPointValuesKeepEveryBit(String refresh) throws Exception {
+    // Spec: README.md > "Captured dataset" (types must be verified per engine)
+    assertRoundTrip("DOUBLE PRECISION", "0.1", refresh);
+    assertRoundTrip("DOUBLE PRECISION", "'1.7976931348623157e308'", refresh);
+    assertRoundTrip("DOUBLE PRECISION", "'4.9e-324'", refresh);
+    assertRoundTrip("DOUBLE PRECISION", "'-0'", refresh);
+    assertRoundTrip("REAL", "'3.4028235e38'", refresh);
+    assertRoundTrip("REAL", "'0.1'", refresh);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"optimized", "dbunit"})
+  void floatingPointSpecialValuesRoundTrip(String refresh) throws Exception {
+    // Spec: README.md > "Captured dataset" (types must be verified per engine)
+    assertRoundTrip("DOUBLE PRECISION", "'NaN'", refresh);
+    assertRoundTrip("DOUBLE PRECISION", "'-Infinity'", refresh);
+    assertRoundTrip("NUMERIC", "'NaN'", refresh);
+  }
+
+  // ---- PostgreSQL types ----
+
+  @ParameterizedTest
+  @ValueSource(strings = {"optimized", "dbunit"})
+  void booleansRoundTrip(String refresh) throws Exception {
+    // Spec: README.md > "Captured dataset" (types must be verified per engine)
+    assertRoundTrip("BOOLEAN", "TRUE", refresh);
+    assertRoundTrip("BOOLEAN", "FALSE", refresh);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"optimized", "dbunit"})
+  void uuidsRoundTrip(String refresh) throws Exception {
+    // Spec: README.md > "Captured dataset" (types must be verified per engine)
+    assertRoundTrip("UUID", "'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'", refresh);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"optimized", "dbunit"})
+  void jsonKeepsItsTextAndJsonbItsValue(String refresh) throws Exception {
+    // Spec: README.md > "Captured dataset" (types must be verified per engine)
+    // json keeps spacing and key order; jsonb normalizes both
+    String document = "'{\"b\": [1, \"<x> & é\", null],   \"a\": {\"q\": \"\\\"\"}}'";
+    assertRoundTrip("JSON", document, refresh);
+    assertRoundTrip("JSONB", document, refresh);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"optimized", "dbunit"})
+  void enumValuesRoundTrip(String refresh) throws Exception {
+    // Spec: README.md > "Captured dataset" (types must be verified per engine)
+    execute(
+        "DROP TABLE IF EXISTS idb_types.typed",
+        "DROP TYPE IF EXISTS idb_types.mood",
+        "CREATE TYPE idb_types.mood AS ENUM ('sad', 'ok', 'happy')");
+    assertRoundTrip("idb_types.mood", "'happy'", refresh);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"optimized", "dbunit"})
+  void arraysRoundTrip(String refresh) throws Exception {
+    // Spec: README.md > "Captured dataset" (types must be verified per engine)
+    assertRoundTrip("INTEGER[]", "'{1,NULL,-3}'", refresh);
+    assertRoundTrip("TEXT[]", "ARRAY['a,b', 'say \"hi\"', '', NULL]", refresh);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"optimized", "dbunit"})
+  void intervalsAndNetworkAddressesRoundTrip(String refresh) throws Exception {
+    // Spec: README.md > "Captured dataset" (types must be verified per engine)
+    assertRoundTrip("INTERVAL", "'1 year 2 mons 3 days 04:05:06.789'", refresh);
+    assertRoundTrip("INET", "'192.168.0.1/24'", refresh);
+    assertRoundTrip("CIDR", "'10.0.0.0/8'", refresh);
+  }
 }
