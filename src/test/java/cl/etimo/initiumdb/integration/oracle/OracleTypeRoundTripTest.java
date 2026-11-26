@@ -3,9 +3,11 @@ package cl.etimo.initiumdb.integration.oracle;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import cl.etimo.initiumdb.integration.EngineScenario;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -14,6 +16,7 @@ import java.util.TimeZone;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -80,19 +83,54 @@ class OracleTypeRoundTripTest {
    */
   private String roundTrip(String type, String literal, String text, String refresh)
       throws Exception {
+    createTable(type);
+    execute("INSERT INTO IDB_TYPES.TYPED VALUES (1, " + literal + ")");
+    captureDeleteAndPrepare(refresh);
+    return scalar("SELECT " + text.formatted("V") + " FROM IDB_TYPES.TYPED WHERE ID = 1");
+  }
+
+  private static void createTable(String type) throws SQLException {
     execute(
         "DROP TABLE IF EXISTS IDB_TYPES.TYPED",
-        "CREATE TABLE IDB_TYPES.TYPED (ID NUMBER PRIMARY KEY, V " + type + ")",
-        "INSERT INTO IDB_TYPES.TYPED VALUES (1, " + literal + ")");
-    EngineScenario scenario =
-        new EngineScenario(
-            root, "oracle", ORACLE.getJdbcUrl(), "system", ORACLE.getPassword(), QUERIES);
+        "CREATE TABLE IDB_TYPES.TYPED (ID NUMBER PRIMARY KEY, V " + type + ")");
+  }
+
+  private EngineScenario scenario(String queries) throws Exception {
+    return new EngineScenario(
+        root, "oracle", ORACLE.getJdbcUrl(), "system", ORACLE.getPassword(), queries);
+  }
+
+  private void captureDeleteAndPrepare(String refresh) throws Exception {
+    EngineScenario scenario = scenario(QUERIES);
     EngineScenario.Result captured = scenario.capture();
     assertThat(captured.exitCode()).as(captured.err()).isZero();
     execute("DELETE FROM IDB_TYPES.TYPED");
     EngineScenario.Result prepared = scenario.prepare(refresh);
     assertThat(prepared.exitCode()).as(prepared.err()).isZero();
-    return scalar("SELECT " + text.formatted("V") + " FROM IDB_TYPES.TYPED WHERE ID = 1");
+  }
+
+  /**
+   * As {@link #roundTrip}, with the value bound from Java (LOBs larger than a SQL literal allows),
+   * and read back with {@code getBytes} or {@code getString}.
+   */
+  private Object boundRoundTrip(String type, Object value, String refresh) throws Exception {
+    createTable(type);
+    try (Connection c = connection();
+        PreparedStatement s = c.prepareStatement("INSERT INTO IDB_TYPES.TYPED VALUES (1, ?)")) {
+      if (value instanceof byte[] bytes) {
+        s.setBytes(1, bytes);
+      } else {
+        s.setString(1, (String) value);
+      }
+      s.executeUpdate();
+    }
+    captureDeleteAndPrepare(refresh);
+    try (Connection c = connection();
+        Statement s = c.createStatement();
+        ResultSet rs = s.executeQuery("SELECT V FROM IDB_TYPES.TYPED WHERE ID = 1")) {
+      assertThat(rs.next()).isTrue();
+      return value instanceof byte[] ? rs.getBytes(1) : rs.getString(1);
+    }
   }
 
   private void assertRoundTrip(String type, String literal, String text, String refresh)
@@ -188,5 +226,93 @@ class OracleTypeRoundTripTest {
     } finally {
       TimeZone.setDefault(previous);
     }
+  }
+
+  // ---- control characters ----
+
+  @Test
+  void textWithAControlCharacterFailsTheCaptureAndKeepsThePreviousDataset() throws Exception {
+    // Spec: README.md > "Captured dataset" (XML 1.0 cannot hold most control characters)
+    // Given: a previous dataset, and a row whose text holds U+0001
+    createTable("VARCHAR2(50)");
+    execute(
+        "INSERT INTO IDB_TYPES.TYPED VALUES (1, 'ok')",
+        "INSERT INTO IDB_TYPES.TYPED VALUES (2, 'secret' || CHR(1) || 'value')");
+    EngineScenario scenario =
+        scenario(
+            QUERIES.replace(
+                "name: TYPED\n", "name: TYPED\n    sql: SELECT * FROM TYPED ORDER BY ID\n"));
+    Files.writeString(scenario.dataset(), "<dataset/>");
+
+    // When
+    EngineScenario.Result captured = scenario.capture();
+
+    // Then: the cell is named, the value is not shown, and the dataset is untouched
+    assertThat(captured.exitCode()).isEqualTo(1);
+    assertThat(captured.err())
+        .contains("Table 'TYPED', column 'V', row 2 holds character U+0001")
+        .doesNotContain("secret");
+    assertThat(scenario.readDataset()).isEqualTo("<dataset/>");
+  }
+
+  // ---- binary and large values ----
+
+  @ParameterizedTest
+  @ValueSource(strings = {"optimized", "dbunit"})
+  void rawKeepsItsBytes(String refresh) throws Exception {
+    // Spec: README.md > "Captured dataset" (binary data must be verified per engine)
+    assertRoundTrip("RAW(16)", "HEXTORAW('00FF7F8001')", "RAWTOHEX(%s)", refresh);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"optimized", "dbunit"})
+  void blobKeepsEveryByteValue(String refresh) throws Exception {
+    // Spec: README.md > "Captured dataset" (binary data must be verified per engine)
+    byte[] every = new byte[256];
+    for (int i = 0; i < every.length; i++) {
+      every[i] = (byte) i;
+    }
+    assertThat((byte[]) boundRoundTrip("BLOB", every, refresh)).isEqualTo(every);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"optimized", "dbunit"})
+  void aLargeBlobRoundTrips(String refresh) throws Exception {
+    // Spec: README.md > "Captured dataset" (binary data must be verified per engine)
+    byte[] large = new byte[2_000_000];
+    for (int i = 0; i < large.length; i++) {
+      large[i] = (byte) (i * 31 + i / 7);
+    }
+    assertThat((byte[]) boundRoundTrip("BLOB", large, refresh)).isEqualTo(large);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"optimized", "dbunit"})
+  void anEmptyBlobIsAppliedAsNullAsOracleDoesWithEveryEmptyValue(String refresh) throws Exception {
+    // Spec: README.md > "Captured dataset" (on Oracle an empty BLOB is applied as NULL)
+    // Given: an empty, not NULL, BLOB, captured as an empty attribute
+    // When: deleted and prepared again
+    String actual =
+        roundTrip("BLOB", "EMPTY_BLOB()", "NVL(TO_CHAR(DBMS_LOB.GETLENGTH(%s)), 'NULL')", refresh);
+    // Then: Oracle stores the zero-length value it is sent as NULL, as it does for ''
+    assertThat(Files.readString(root.resolve("project").resolve("CRM.dataset.xml")))
+        .contains("<TYPED ID=\"1\" V=\"\"/>");
+    assertThat(actual).isEqualTo("NULL");
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"optimized", "dbunit"})
+  void aLargeClobRoundTrips(String refresh) throws Exception {
+    // Spec: README.md > "Captured dataset" (types must be verified per engine)
+    String large = "línea ñ <&> €\r\n\t".repeat(100_000);
+    assertThat(boundRoundTrip("CLOB", large, refresh)).isEqualTo(large);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"optimized", "dbunit"})
+  void aLargeNclobRoundTrips(String refresh) throws Exception {
+    // Spec: README.md > "Captured dataset" (types must be verified per engine)
+    String large = "Ωmega ñandú 😀 \"quoted\"\n".repeat(50_000);
+    assertThat(boundRoundTrip("NCLOB", large, refresh)).isEqualTo(large);
   }
 }

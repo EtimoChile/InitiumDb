@@ -93,6 +93,77 @@ class DatasetTypesTest {
   }
 
   @Test
+  void textWithAControlCharacterFailsTheCaptureWithoutShowingTheValue() {
+    // Spec: README.md > Captured dataset (XML 1.0 cannot hold most control characters)
+    // Given: an earlier dataset, and a name that holds U+001B after valid non-BMP text
+    fx.sql(
+        "INSERT INTO CUSTOMER VALUES (1001, 'Ana 😀', 'OK')",
+        "INSERT INTO CUSTOMER VALUES (1002, 'secret' || CHAR(27) || 'name', 'OK')");
+    fx.write("CRM.dataset.xml", "<dataset/>");
+    fx.write(
+        "CRM.queries.yml",
+        "tables:\n  - name: CUSTOMER\n    sql: SELECT * FROM CUSTOMER ORDER BY CUSTOMER_ID\n");
+    // When
+    CliRun run = fx.capture();
+    // Then
+    assertThat(run.exitCode()).isEqualTo(1);
+    assertThat(run.err())
+        .contains("Table 'CUSTOMER', column 'NAME', row 2 holds character U+001B")
+        .doesNotContain("secret");
+    assertThat(fx.read("CRM.dataset.xml")).isEqualTo("<dataset/>");
+  }
+
+  @Test
+  void textWithCharactersOutsideTheBasicPlaneRoundTrips() {
+    // Spec: README.md > Captured dataset (values of each type come back unchanged)
+    // Given: emoji and musical symbols, plus text that looks like the references to their halves
+    fx.sql("INSERT INTO CUSTOMER VALUES (1001, 'Ana 😀 𝄞 &#55357;&#56832;', 'OK')");
+    fx.write("CRM.queries.yml", "tables:\n  - name: CUSTOMER\n    sql: SELECT * FROM CUSTOMER\n");
+    assertThat(fx.capture().exitCode()).isZero();
+    fx.sql("DELETE FROM CUSTOMER");
+    // When
+    CliRun run = fx.prepare();
+    // Then
+    assertThat(run.exitCode()).as(run.err()).isZero();
+    assertThat(fx.value("SELECT NAME FROM CUSTOMER WHERE CUSTOMER_ID = 1001"))
+        .isEqualTo("Ana 😀 𝄞 &#55357;&#56832;");
+  }
+
+  @Test
+  void largeTextFullOfMarkupCharactersRoundTrips() {
+    // Spec: README.md > Captured dataset (values of each type come back unchanged)
+    // Given: 200,000 characters that the dataset must escape (&amp; &lt; &gt; &quot; &apos;)
+    fx.sql(
+        "CREATE TABLE NOTE (ID INT PRIMARY KEY, BODY CLOB)",
+        "INSERT INTO NOTE VALUES (1, REPEAT('<&>\"''', 40000))");
+    fx.write("CRM.queries.yml", "tables:\n  - name: NOTE\n");
+    assertThat(fx.capture().exitCode()).isZero();
+    fx.sql("DELETE FROM NOTE");
+    // When
+    CliRun run = fx.prepare();
+    // Then
+    assertThat(run.exitCode()).as(run.err()).isZero();
+    assertThat(fx.value("SELECT BODY FROM NOTE WHERE ID = 1")).isEqualTo("<&>\"'".repeat(40000));
+  }
+
+  @Test
+  void aDatasetThatDeclaresAnEntityIsRejectedBeforeAnyRowIsApplied() {
+    // Spec: README.md > Captured dataset (datasets may not declare entities)
+    // Given: an entity that would expand into the stored name
+    fx.sql("INSERT INTO CUSTOMER VALUES (1001, 'Before', 'OK')");
+    fx.write(
+        "CRM.dataset.xml",
+        "<?xml version=\"1.0\"?><!DOCTYPE dataset [<!ENTITY big \"After\">]>"
+            + "<dataset><CUSTOMER CUSTOMER_ID=\"1001\" NAME=\"&big;\" STATUS=\"OK\"/></dataset>");
+    // When
+    CliRun run = fx.prepare();
+    // Then
+    assertThat(run.exitCode()).isEqualTo(1);
+    assertThat(run.err()).contains("declares entity 'big'");
+    assertThat(fx.value("SELECT NAME FROM CUSTOMER WHERE CUSTOMER_ID = 1001")).isEqualTo("Before");
+  }
+
+  @Test
   void aTimestampThatIsNotADateFailsThePrepare() {
     // Spec: README.md > idb-prepare (exit successfully only if every alias completes)
     // Given
