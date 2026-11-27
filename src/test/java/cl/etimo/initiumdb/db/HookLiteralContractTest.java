@@ -62,6 +62,10 @@ class HookLiteralContractTest {
     assertThat(oracle.literal("O'Brien ", Types.CHAR, "CHAR")).hasValue("'O''Brien '");
     assertThat(oracle.literal("ñandú", Types.NVARCHAR, "NVARCHAR2")).hasValue("'ñandú'");
     assertThat(postgresql.literal("a''b", Types.VARCHAR, "text")).hasValue("'a''''b'");
+    // a backslash is escaped on PostgreSQL, whatever standard_conforming_strings is; Oracle has
+    // none
+    assertThat(postgresql.literal("C:\\tmp\\", Types.VARCHAR, "text")).hasValue("E'C:\\\\tmp\\\\'");
+    assertThat(oracle.literal("C:\\tmp\\", Types.VARCHAR, "VARCHAR2")).hasValue("'C:\\tmp\\'");
     // PostgreSQL enum values are reported as VARCHAR with the enum's name
     assertThat(postgresql.literal("ACTIVE", Types.VARCHAR, "status")).hasValue("'ACTIVE'");
   }

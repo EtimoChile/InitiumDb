@@ -159,7 +159,7 @@ ALTER SEQUENCE $${seq} RESTART START WITH 1000;
 | Column type | Oracle | PostgreSQL | `${name}` writes |
 |---|---|---|---|
 | Exact number | `NUMBER`, `INTEGER`, `FLOAT` | `smallint`, `integer`, `bigint`, `numeric` | plain notation, no exponent: `12345`, `-1234.50` |
-| Text | `CHAR`, `VARCHAR2`, `NCHAR`, `NVARCHAR2` | `char`, `varchar`, `text` (and enums) | `'O''Brien'`: single quotes, each `'` doubled, padding kept |
+| Text | `CHAR`, `VARCHAR2`, `NCHAR`, `NVARCHAR2` | `char`, `varchar`, `text` (and enums) | `'O''Brien'`: single quotes, each `'` doubled, padding kept; on PostgreSQL text holding a backslash is written `E'C:\\tmp'`, each `\` also doubled, so it does not depend on `standard_conforming_strings` |
 | Date | `DATE` | `date` | Oracle `TO_DATE('2026-11-27 13:45:00', 'YYYY-MM-DD HH24:MI:SS')`; PostgreSQL `DATE '2026-11-27'` |
 | Timestamp | `TIMESTAMP` | `timestamp` | `TIMESTAMP '2026-11-27 13:45:00.123'`, fraction without trailing zeros, none when zero |
 | Boolean | — | `boolean` | `TRUE`, `FALSE` |

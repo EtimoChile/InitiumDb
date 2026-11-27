@@ -13,6 +13,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
 import java.time.OffsetDateTime;
+import java.time.OffsetTime;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
@@ -42,11 +43,18 @@ public final class PostgresqlEngine implements DatabaseEngine {
     return new PostgresqlUpsertOperation();
   }
 
-  /** {@code timestamptz} is read with its offset; it has no literal (DEC-020). */
+  /**
+   * {@code timestamptz} and {@code timetz} are read with their offset; they have no literal
+   * (DEC-020).
+   */
   @Override
   public Object hookValue(ResultSet rows, int column) throws SQLException {
-    if (isTimestampTz(rows.getMetaData().getColumnTypeName(column))) {
+    String typeName = rows.getMetaData().getColumnTypeName(column);
+    if (isTimestampTz(typeName)) {
       return rows.getObject(column, OffsetDateTime.class);
+    }
+    if ("timetz".equalsIgnoreCase(typeName)) {
+      return rows.getObject(column, OffsetTime.class);
     }
     return DatabaseEngine.super.hookValue(rows, column);
   }
@@ -54,7 +62,9 @@ public final class PostgresqlEngine implements DatabaseEngine {
   /**
    * The standard literals, except that pgjdbc reports {@code bit(n)} and {@code boolean} both as
    * {@code BIT} (only {@code boolean} gets {@code TRUE}/{@code FALSE}) and {@code timestamptz} as
-   * {@code TIMESTAMP} (no literal: time zones are not supported).
+   * {@code TIMESTAMP} (no literal: time zones are not supported), and that text holding a backslash
+   * is written {@code E'...'} with backslashes doubled, so it reads the same whatever {@code
+   * standard_conforming_strings} is.
    */
   @Override
   public Optional<String> literal(Object value, int jdbcType, String typeName) {
@@ -62,7 +72,11 @@ public final class PostgresqlEngine implements DatabaseEngine {
     if ((jdbcType == Types.BIT && !name.equals("bool")) || isTimestampTz(name)) {
       return Optional.empty();
     }
-    return SqlLiterals.standard(value, jdbcType);
+    Optional<String> standard = SqlLiterals.standard(value, jdbcType);
+    if (standard.isPresent() && value instanceof String text && text.indexOf('\\') >= 0) {
+      return Optional.of("E" + SqlLiterals.text(text.replace("\\", "\\\\")));
+    }
+    return standard;
   }
 
   /**

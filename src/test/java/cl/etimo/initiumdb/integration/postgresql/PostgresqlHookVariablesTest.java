@@ -59,7 +59,7 @@ class PostgresqlHookVariablesTest {
             + " created_tz timestamptz)",
         "CREATE TABLE app.hook_log (id bigint, big_id bigint, amount numeric(12,4),"
             + " name varchar(40), code char(5), born date, created timestamp(6),"
-            + " active boolean, status app.status, created_tz timestamptz)");
+            + " active boolean, status app.status, created_tz timestamptz, at time(6))");
   }
 
   @AfterAll
@@ -162,6 +162,26 @@ class PostgresqlHookVariablesTest {
         .isEqualTo("ACTIVE");
     assertThat(scalar("SELECT count(*) FROM app.hook_log WHERE id = 7 AND status IS NULL"))
         .isEqualTo("1");
+  }
+
+  @Test
+  void backslashesAndTimeFractionsAreKeptWhateverTheSessionSettings() throws Exception {
+    // Spec: README.md > Hook variables (text literals do not depend on session settings;
+    // :name binds keep the value)
+    // Given: a value read with standard strings, written back with them off
+    EngineScenario scenario = scenario();
+    scenario.writeHook(
+        "post",
+        "-- idb:set SELECT 'C:\\tmp\\' AS path, TIME '12:34:56.123456' AS at\n"
+            + "SET standard_conforming_strings = off;\n"
+            + "INSERT INTO app.hook_log (id, name, at) VALUES (8, ${path}, :at);\n"
+            + "SET standard_conforming_strings = on;\n");
+    // When
+    EngineScenario.Result prepared = scenario.prepare();
+    // Then
+    assertThat(prepared.exitCode()).as(prepared.err()).isZero();
+    assertThat(scalar("SELECT name || '|' || at FROM app.hook_log WHERE id = 8"))
+        .isEqualTo("C:\\tmp\\|12:34:56.123456");
   }
 
   @Test

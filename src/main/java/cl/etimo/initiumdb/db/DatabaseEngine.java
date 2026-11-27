@@ -7,6 +7,7 @@ import java.sql.SQLException;
 import java.sql.Types;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.Optional;
 import org.dbunit.database.DatabaseConfig;
 import org.dbunit.operation.DatabaseOperation;
@@ -40,14 +41,16 @@ public interface DatabaseEngine {
   }
 
   /**
-   * Reads column {@code column} of the current row for a hook variable (DEC-020). Dates and
-   * timestamps without time zone are read as {@link java.time.LocalDate} and {@link
-   * java.time.LocalDateTime}, free of the JVM's time zone (DEC-015); anything else as the driver's
-   * own object.
+   * Reads column {@code column} of the current row for a hook variable (DEC-020). Dates, times and
+   * timestamps without time zone are read as {@link java.time.LocalDate}, {@link
+   * java.time.LocalTime} and {@link java.time.LocalDateTime}, free of the JVM's time zone (DEC-015)
+   * and with their full fraction; anything else as the driver's own object.
    */
   default Object hookValue(ResultSet rows, int column) throws SQLException {
     return switch (rows.getMetaData().getColumnType(column)) {
       case Types.DATE -> rows.getObject(column, LocalDate.class);
+      // java.sql.Time keeps only milliseconds
+      case Types.TIME -> rows.getObject(column, LocalTime.class);
       case Types.TIMESTAMP -> rows.getObject(column, LocalDateTime.class);
       default -> rows.getObject(column);
     };
