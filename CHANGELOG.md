@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.6.1 - 2026-11-27
+
+- Fix: on Oracle, when `idb-prepare` fails on a row of the optimized apply (for example a child row declared before its parent, `ORA-02291`), the error now names the table as well as the database's reason.
+- The shipped `examples/postgresql` and `examples/oracle` are run end to end against disposable containers, and the dataset table order and metadata requirements (foreign-key chains, self references, cycles, composite keys, tables without key, grants-only users) are verified on both engines and both apply paths.
+
 ## 0.6.0 - 2026-11-26
 
 - Fix: timestamps without time zone (PostgreSQL `timestamp`, Oracle `DATE` and `TIMESTAMP`) no longer shift by an hour when they fall in a daylight-saving gap of the machine's time zone.
