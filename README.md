@@ -155,7 +155,7 @@ repo-app/
           BILLING.dataset.xml
 ```
 
-Ready-to-copy examples for Oracle and PostgreSQL live in [`examples/`](examples): each has a `schema.sql` (disposable dev database only), a `config/dev.yml` environment, a `config/secrets.example.json` and a `testdata/regression` case. Copy `secrets.example.json` to `dev.secrets.json`, set the password and run `idb-crypt --environment dev --config-dir examples/<engine>/config`.
+Ready-to-copy examples for Oracle and PostgreSQL live in [`examples/`](examples): each has a `schema.sql` (disposable dev database only), a `config/dev.yml` environment, a `config/secrets.example.json` and a `testdata/regression` case. Copy `secrets.example.json` to `dev.secrets.json`, set the password and run `idb-crypt --environment dev --config-dir examples/<engine>/config`. The opt-in integration tests run both examples end to end as shipped against disposable containers.
 
 The location is illustrative: InitiumDb does not require a particular Playwright or application directory layout. **The directory is the case**: `--case` names it, its name is the case name, and it holds a `case.yml` plus, for each database alias, files with fixed names (below).
 
