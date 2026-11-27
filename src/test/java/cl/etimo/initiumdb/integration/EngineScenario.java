@@ -61,10 +61,17 @@ public final class EngineScenario {
     return run(false);
   }
 
-  private Result run(boolean capture) {
-    String[] args = {
+  /** {@code idb-prepare --refresh <mode>} ({@code optimized} or {@code dbunit}). */
+  public Result prepare(String refresh) {
+    return run(false, "--refresh", refresh);
+  }
+
+  private Result run(boolean capture, String... extra) {
+    String[] base = {
       "--case", project.toString(), "--environment", "dev", "--config-dir", configDir.toString()
     };
+    String[] args = java.util.Arrays.copyOf(base, base.length + extra.length);
+    System.arraycopy(extra, 0, args, base.length, extra.length);
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     ByteArrayOutputStream err = new ByteArrayOutputStream();
     int code;
