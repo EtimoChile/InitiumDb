@@ -5,12 +5,15 @@ import cl.etimo.initiumdb.db.DatabaseEngine;
 import cl.etimo.initiumdb.db.FloatingPointDataType;
 import cl.etimo.initiumdb.db.LocalTimestampDataType;
 import cl.etimo.initiumdb.db.SqlIdentifiers;
+import cl.etimo.initiumdb.db.SqlLiterals;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
+import java.time.OffsetDateTime;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import org.dbunit.database.DatabaseConfig;
 import org.dbunit.dataset.datatype.DataType;
@@ -36,6 +39,33 @@ public final class PostgresqlEngine implements DatabaseEngine {
   @Override
   public DatabaseOperation refreshOperation() {
     return new PostgresqlUpsertOperation();
+  }
+
+  /** {@code timestamptz} is read with its offset; it has no literal (DEC-020). */
+  @Override
+  public Object hookValue(ResultSet rows, int column) throws SQLException {
+    if (isTimestampTz(rows.getMetaData().getColumnTypeName(column))) {
+      return rows.getObject(column, OffsetDateTime.class);
+    }
+    return DatabaseEngine.super.hookValue(rows, column);
+  }
+
+  /**
+   * The standard literals, except that pgjdbc reports {@code bit(n)} and {@code boolean} both as
+   * {@code BIT} (only {@code boolean} gets {@code TRUE}/{@code FALSE}) and {@code timestamptz} as
+   * {@code TIMESTAMP} (no literal: time zones are not supported).
+   */
+  @Override
+  public Optional<String> literal(Object value, int jdbcType, String typeName) {
+    String name = typeName == null ? "" : typeName.toLowerCase(Locale.ROOT);
+    if ((jdbcType == Types.BIT && !name.equals("bool")) || isTimestampTz(name)) {
+      return Optional.empty();
+    }
+    return SqlLiterals.standard(value, jdbcType);
+  }
+
+  private static boolean isTimestampTz(String typeName) {
+    return typeName != null && typeName.equalsIgnoreCase("timestamptz");
   }
 
   @Override

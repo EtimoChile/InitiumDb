@@ -126,7 +126,8 @@ public final class PrepareService {
     try (Connection connection = resolver.resolve(environment.environment(), step.alias())) {
       connection.setAutoCommit(true);
       engine.useSchema(connection, schema);
-      execute(connection, pre, "pre hook", out);
+      HookVariables variables = new HookVariables(engine);
+      execute(connection, pre, variables, "pre hook", out);
       long start = System.nanoTime();
       DatabaseOperation operation =
           mode == RefreshMode.DBUNIT ? new DbUnitRefreshOperation() : engine.refreshOperation();
@@ -139,7 +140,7 @@ public final class PrepareService {
               + " ("
               + (operation instanceof BatchedUpsertOperation ? "optimized" : "dbunit")
               + ")");
-      execute(connection, post, "post hook", out);
+      execute(connection, post, variables, "post hook", out);
     }
   }
 
@@ -273,24 +274,48 @@ public final class PrepareService {
     return SqlScript.statements(Files.readString(file, StandardCharsets.UTF_8));
   }
 
+  /**
+   * Runs a hook. Errors show the statement as written, before variables are replaced, so values
+   * never reach the output (DEC-020).
+   */
   private static void execute(
-      Connection connection, List<Statement> statements, String label, PrintStream out)
+      Connection connection,
+      List<Statement> statements,
+      HookVariables variables,
+      String label,
+      PrintStream out)
       throws SQLException {
     if (statements.isEmpty()) {
       return;
     }
     long start = System.nanoTime();
+    long total = statements.stream().filter(s -> !s.assignment()).count();
     int run = 0;
     int skipped = 0;
     for (Statement hook : statements) {
-      if (hook.guard() != null && !guardAllows(connection, hook.guard(), label)) {
+      if (hook.assignment()) {
+        List<String> names;
+        try {
+          names = variables.set(connection, hook.sql());
+        } catch (SQLException e) {
+          throw CaptureService.failed(label + " idb:set", hook.sql(), e);
+        } catch (InitiumDbException e) {
+          throw new InitiumDbException(label + " idb:set: " + e.getMessage());
+        }
+        out.println("  " + label + ": set " + String.join(", ", names));
+        continue;
+      }
+      if (hook.guard() != null && !guardAllows(connection, hook.guard(), variables, label)) {
         skipped++;
         continue;
       }
-      try (java.sql.Statement statement = connection.createStatement()) {
-        statement.execute(hook.sql());
+      String where = label + " statement " + (run + skipped + 1);
+      try {
+        run(connection, variables.expand(hook.sql()));
       } catch (SQLException e) {
-        throw CaptureService.failed(label + " statement " + (run + skipped + 1), hook.sql(), e);
+        throw CaptureService.failed(where, hook.sql(), e);
+      } catch (InitiumDbException e) {
+        throw new InitiumDbException(where + ": " + e.getMessage());
       }
       run++;
     }
@@ -300,16 +325,30 @@ public final class PrepareService {
             + ": "
             + run
             + " of "
-            + statements.size()
+            + total
             + " statement(s) run in "
             + seconds(System.nanoTime() - start));
   }
 
-  /** Runs a guard query: {@code run-if} needs a row, {@code skip-if} needs none. */
-  private static boolean guardAllows(Connection connection, Guard guard, String label)
+  private static void run(Connection connection, HookVariables.Expanded expanded)
       throws SQLException {
-    try (java.sql.Statement statement = connection.createStatement();
-        ResultSet rows = statement.executeQuery(guard.query())) {
+    try (java.sql.Statement statement = HookVariables.statement(connection, expanded)) {
+      HookVariables.execute(statement, expanded);
+    }
+  }
+
+  /** Runs a guard query: {@code run-if} needs a row, {@code skip-if} needs none. */
+  private static boolean guardAllows(
+      Connection connection, Guard guard, HookVariables variables, String label)
+      throws SQLException {
+    HookVariables.Expanded expanded;
+    try {
+      expanded = variables.expand(guard.query());
+    } catch (InitiumDbException e) {
+      throw new InitiumDbException(label + " guard: " + e.getMessage());
+    }
+    try (java.sql.Statement statement = HookVariables.statement(connection, expanded);
+        ResultSet rows = HookVariables.executeQuery(statement, expanded)) {
       return rows.next() == guard.runIf();
     } catch (SQLException e) {
       throw CaptureService.failed(label + " guard", guard.query(), e);

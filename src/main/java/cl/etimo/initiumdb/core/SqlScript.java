@@ -26,14 +26,22 @@ import java.util.List;
  * sent to the database. Every other comment, including block comments, has no special meaning. To
  * keep a typo from silently running a statement that was meant to be conditional, any line comment
  * starting with {@code idb:} must be a valid directive, with one guard, before the statement.
+ *
+ * <p>{@code idb:set <query>} (DEC-020) stands alone between statements: it becomes an assignment
+ * ({@link Statement#assignment()}) whose {@code sql} is the query that sets hook variables.
  */
 public final class SqlScript {
 
   /** Runs the statement when a row is returned ({@code runIf}) or when none is. */
   public record Guard(boolean runIf, String query) {}
 
-  /** One statement to execute; {@code guard} is {@code null} when it is unconditional. */
-  public record Statement(String sql, Guard guard) {}
+  /**
+   * One statement to execute; {@code guard} is {@code null} when it is unconditional. An {@code
+   * assignment} is an {@code idb:set} directive: {@code sql} is its query and it has no guard.
+   */
+  public record Statement(String sql, Guard guard, boolean assignment) {}
+
+  private static final String SET = "idb:set";
 
   private SqlScript() {}
 
@@ -51,8 +59,21 @@ public final class SqlScript {
         int end = script.indexOf('\n', i);
         end = end < 0 ? n : end;
         String comment = script.substring(i, end);
-        Guard guard = directive(comment);
-        if (guard == null) {
+        String assignment = assignment(comment);
+        Guard guard = assignment == null ? directive(comment) : null;
+        if (assignment != null) {
+          if (pending[0] != null) {
+            throw new InitiumDbException(
+                "An idb:run-if or idb:skip-if directive must be followed by its statement, not by "
+                    + SET
+                    + ".");
+          }
+          if (hasCode(current.toString())) {
+            throw new InitiumDbException(
+                SET + " must come between statements, not inside one: " + comment.strip());
+          }
+          statements.add(new Statement(assignment, null, true));
+        } else if (guard == null) {
           current.append(comment);
         } else {
           if (pending[0] != null) {
@@ -84,6 +105,20 @@ public final class SqlScript {
     return statements;
   }
 
+  /** Returns the query of an {@code idb:set} line comment, or {@code null} for any other. */
+  private static String assignment(String comment) {
+    String body = comment.substring(2).strip();
+    int space = indexOfWhitespace(body);
+    if (!(space < 0 ? body : body.substring(0, space)).equals(SET)) {
+      return null;
+    }
+    String query = query(body, space);
+    if (query.isEmpty()) {
+      throw new InitiumDbException("Directive " + SET + " needs a query on the same line.");
+    }
+    return query;
+  }
+
   /** Returns the guard of an {@code idb:} line comment, or {@code null} for any other comment. */
   private static Guard directive(String comment) {
     String body = comment.substring(2).strip();
@@ -99,16 +134,22 @@ public final class SqlScript {
       runIf = false;
     } else {
       throw new InitiumDbException(
-          "Unknown directive '" + name + "' (expected idb:run-if or idb:skip-if).");
+          "Unknown directive '" + name + "' (expected idb:run-if, idb:skip-if or idb:set).");
     }
-    String query = space < 0 ? "" : body.substring(space).strip();
-    if (query.endsWith(";")) {
-      query = query.substring(0, query.length() - 1).strip();
-    }
+    String query = query(body, space);
     if (query.isEmpty()) {
       throw new InitiumDbException("Directive " + name + " needs a guard query on the same line.");
     }
     return new Guard(runIf, query);
+  }
+
+  /** The rest of the directive line after its name, without a trailing {@code ;}. */
+  private static String query(String body, int space) {
+    String query = space < 0 ? "" : body.substring(space).strip();
+    if (query.endsWith(";")) {
+      query = query.substring(0, query.length() - 1).strip();
+    }
+    return query;
   }
 
   private static int indexOfWhitespace(String text) {
@@ -150,7 +191,7 @@ public final class SqlScript {
     Guard guard = pending[0];
     pending[0] = null;
     if (hasCode(sql)) {
-      statements.add(new Statement(sql, guard));
+      statements.add(new Statement(sql, guard, false));
     } else if (guard != null) {
       throw new InitiumDbException(
           "Directive idb:"

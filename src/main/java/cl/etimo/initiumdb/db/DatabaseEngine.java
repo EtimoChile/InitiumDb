@@ -1,7 +1,12 @@
 package cl.etimo.initiumdb.db;
 
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Types;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.Optional;
 import org.dbunit.database.DatabaseConfig;
 import org.dbunit.operation.DatabaseOperation;
 
@@ -31,5 +36,28 @@ public interface DatabaseEngine {
    */
   default DatabaseOperation refreshOperation() {
     return new DbUnitRefreshOperation();
+  }
+
+  /**
+   * Reads column {@code column} of the current row for a hook variable (DEC-020). Dates and
+   * timestamps without time zone are read as {@link java.time.LocalDate} and {@link
+   * java.time.LocalDateTime}, free of the JVM's time zone (DEC-015); anything else as the driver's
+   * own object.
+   */
+  default Object hookValue(ResultSet rows, int column) throws SQLException {
+    return switch (rows.getMetaData().getColumnType(column)) {
+      case Types.DATE -> rows.getObject(column, LocalDate.class);
+      case Types.TIMESTAMP -> rows.getObject(column, LocalDateTime.class);
+      default -> rows.getObject(column);
+    };
+  }
+
+  /**
+   * Writes a non-null hook variable as an SQL literal of this engine (DEC-020), or empty when its
+   * type has no supported literal. {@code jdbcType} and {@code typeName} come from the variable's
+   * column metadata. Defaults to {@link SqlLiterals#standard}.
+   */
+  default Optional<String> literal(Object value, int jdbcType, String typeName) {
+    return SqlLiterals.standard(value, jdbcType);
   }
 }

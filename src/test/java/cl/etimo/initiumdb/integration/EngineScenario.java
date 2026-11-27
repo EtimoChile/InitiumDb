@@ -49,6 +49,11 @@ public final class EngineScenario {
     return project.resolve("CRM.dataset.xml");
   }
 
+  /** Writes the alias's {@code pre} or {@code post} hook. */
+  public void writeHook(String which, String sql) throws IOException {
+    write(project.resolve("CRM." + which + ".sql"), sql);
+  }
+
   public String readDataset() throws IOException {
     return Files.readString(dataset(), StandardCharsets.UTF_8);
   }

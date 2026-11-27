@@ -4,10 +4,15 @@ import cl.etimo.initiumdb.db.DatabaseEngine;
 import cl.etimo.initiumdb.db.FloatingPointDataType;
 import cl.etimo.initiumdb.db.LocalTimestampDataType;
 import cl.etimo.initiumdb.db.SqlIdentifiers;
+import cl.etimo.initiumdb.db.SqlLiterals;
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Types;
+import java.time.LocalDateTime;
 import java.util.Locale;
+import java.util.Optional;
 import org.dbunit.database.DatabaseConfig;
 import org.dbunit.dataset.datatype.DataType;
 import org.dbunit.dataset.datatype.DataTypeException;
@@ -55,6 +60,43 @@ public final class OracleEngine implements DatabaseEngine {
                 super.createDataType(sqlType, sqlTypeName), sqlTypeName);
       };
     }
+  }
+
+  /** {@code DATE} holds a time of day, so it is read as a {@link LocalDateTime} (DEC-020). */
+  @Override
+  public Object hookValue(ResultSet rows, int column) throws SQLException {
+    if (isDate(rows.getMetaData().getColumnTypeName(column))) {
+      return rows.getObject(column, LocalDateTime.class);
+    }
+    return DatabaseEngine.super.hookValue(rows, column);
+  }
+
+  /**
+   * The standard literals, except {@code DATE}, written with {@code TO_DATE} and an explicit format
+   * because the ANSI {@code DATE '...'} literal drops the time of day, {@code FLOAT}, an exact
+   * number whatever JDBC type the driver reports, and {@code BOOLEAN}, which is not supported.
+   */
+  @Override
+  public Optional<String> literal(Object value, int jdbcType, String typeName) {
+    if (isDate(typeName)) {
+      return value instanceof LocalDateTime date
+          ? Optional.of("TO_DATE('" + SqlLiterals.dateTime(date) + "', 'YYYY-MM-DD HH24:MI:SS')")
+          : Optional.empty();
+    }
+    if (jdbcType == Types.BOOLEAN || jdbcType == Types.BIT) {
+      return Optional.empty();
+    }
+    // FLOAT is a decimal NUMBER of up to 38 digits, read as a BigDecimal whatever type is reported
+    if (typeName != null
+        && typeName.equalsIgnoreCase("FLOAT")
+        && value instanceof java.math.BigDecimal decimal) {
+      return Optional.of(decimal.toPlainString());
+    }
+    return SqlLiterals.standard(value, jdbcType);
+  }
+
+  private static boolean isDate(String typeName) {
+    return typeName != null && typeName.equalsIgnoreCase("DATE");
   }
 
   @Override
