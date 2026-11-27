@@ -39,9 +39,15 @@ public final class HookVariables {
 
   /**
    * A statement ready to run: the SQL as written in the hook, the SQL to send and the values of its
-   * {@code ?} placeholders, in order ({@code null} for a NULL value).
+   * {@code ?} placeholders, in order ({@code null} for a NULL value), with the JDBC type and type
+   * name of the column each was read from.
    */
-  public record Expanded(String written, String sql, List<Object> binds, List<Integer> bindTypes) {
+  public record Expanded(
+      String written,
+      String sql,
+      List<Object> binds,
+      List<Integer> bindTypes,
+      List<String> bindTypeNames) {
     public boolean hasBinds() {
       return !binds.isEmpty();
     }
@@ -122,7 +128,7 @@ public final class HookVariables {
    * existed (a {@code ?} operator, for example, is not taken as a placeholder). Run it with {@link
    * #execute} or {@link #executeQuery}.
    */
-  public static java.sql.Statement statement(Connection connection, Expanded expanded)
+  public java.sql.Statement statement(Connection connection, Expanded expanded)
       throws SQLException {
     try {
       return expanded.hasBinds() ? prepare(connection, expanded) : connection.createStatement();
@@ -157,17 +163,17 @@ public final class HookVariables {
     }
   }
 
-  private static PreparedStatement prepare(Connection connection, Expanded expanded)
-      throws SQLException {
+  /** Binds each value with the engine, so it reaches the database with its column's type. */
+  private PreparedStatement prepare(Connection connection, Expanded expanded) throws SQLException {
     PreparedStatement statement = connection.prepareStatement(expanded.sql());
     try {
       for (int i = 0; i < expanded.binds().size(); i++) {
-        Object value = expanded.binds().get(i);
-        if (value == null) {
-          statement.setNull(i + 1, expanded.bindTypes().get(i));
-        } else {
-          statement.setObject(i + 1, value);
-        }
+        engine.bindHookValue(
+            statement,
+            i + 1,
+            expanded.binds().get(i),
+            expanded.bindTypes().get(i),
+            expanded.bindTypeNames().get(i));
       }
       return statement;
     } catch (SQLException | RuntimeException e) {
@@ -181,6 +187,7 @@ public final class HookVariables {
     StringBuilder out = new StringBuilder(sql.length());
     List<Object> binds = new ArrayList<>();
     List<Integer> bindTypes = new ArrayList<>();
+    List<String> bindTypeNames = new ArrayList<>();
     int n = sql.length();
     int i = 0;
     while (i < n) {
@@ -219,6 +226,7 @@ public final class HookVariables {
         Variable variable = lookup(sql.substring(i + 1, end), ":");
         binds.add(variable.value());
         bindTypes.add(variable.jdbcType());
+        bindTypeNames.add(variable.typeName());
         out.append('?');
         i = end;
       } else {
@@ -230,7 +238,8 @@ public final class HookVariables {
         sql,
         out.toString(),
         Collections.unmodifiableList(binds),
-        Collections.unmodifiableList(bindTypes));
+        Collections.unmodifiableList(bindTypes),
+        Collections.unmodifiableList(bindTypeNames));
   }
 
   /** Inside {@code "..."} only {@code $${name}} is replaced, by an unqualified identifier. */

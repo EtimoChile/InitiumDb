@@ -311,7 +311,7 @@ public final class PrepareService {
       }
       String where = label + " statement " + (run + skipped + 1);
       try {
-        run(connection, variables.expand(hook.sql()));
+        run(connection, variables, variables.expand(hook.sql()));
       } catch (SQLException e) {
         throw CaptureService.failed(where, hook.sql(), e);
       } catch (InitiumDbException e) {
@@ -330,9 +330,10 @@ public final class PrepareService {
             + seconds(System.nanoTime() - start));
   }
 
-  private static void run(Connection connection, HookVariables.Expanded expanded)
+  private static void run(
+      Connection connection, HookVariables variables, HookVariables.Expanded expanded)
       throws SQLException {
-    try (java.sql.Statement statement = HookVariables.statement(connection, expanded)) {
+    try (java.sql.Statement statement = variables.statement(connection, expanded)) {
       HookVariables.execute(statement, expanded);
     }
   }
@@ -347,7 +348,7 @@ public final class PrepareService {
     } catch (InitiumDbException e) {
       throw new InitiumDbException(label + " guard: " + e.getMessage());
     }
-    try (java.sql.Statement statement = HookVariables.statement(connection, expanded);
+    try (java.sql.Statement statement = variables.statement(connection, expanded);
         ResultSet rows = HookVariables.executeQuery(statement, expanded)) {
       return rows.next() == guard.runIf();
     } catch (SQLException e) {

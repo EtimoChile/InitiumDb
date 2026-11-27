@@ -7,6 +7,7 @@ import cl.etimo.initiumdb.db.LocalTimestampDataType;
 import cl.etimo.initiumdb.db.SqlIdentifiers;
 import cl.etimo.initiumdb.db.SqlLiterals;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -64,6 +65,31 @@ public final class PostgresqlEngine implements DatabaseEngine {
     return SqlLiterals.standard(value, jdbcType);
   }
 
+  /**
+   * pgjdbc reads an enum as a {@code String} and would bind it as {@code varchar}, which an enum
+   * column rejects; it is sent untyped ({@code OTHER}) so the server takes the column's type, as
+   * {@link TextCastDataType} does for datasets.
+   */
+  @Override
+  public void bindHookValue(
+      PreparedStatement statement, int index, Object value, int jdbcType, String typeName)
+      throws SQLException {
+    if (isEnum(jdbcType, typeName)) {
+      statement.setObject(index, value, Types.OTHER);
+    } else {
+      DatabaseEngine.super.bindHookValue(statement, index, value, jdbcType, typeName);
+    }
+  }
+
+  /** The names pgjdbc reports for character columns; any other {@code VARCHAR} is an enum. */
+  private static final Set<String> TEXT_TYPES = Set.of("varchar", "text", "bpchar", "char", "name");
+
+  static boolean isEnum(int sqlType, String sqlTypeName) {
+    return sqlType == Types.VARCHAR
+        && sqlTypeName != null
+        && !TEXT_TYPES.contains(sqlTypeName.toLowerCase(Locale.ROOT));
+  }
+
   private static boolean isTimestampTz(String typeName) {
     return typeName != null && typeName.equalsIgnoreCase("timestamptz");
   }
@@ -94,10 +120,6 @@ public final class PostgresqlEngine implements DatabaseEngine {
    */
   private static final class DataTypes extends PostgresqlDataTypeFactory {
 
-    /** The names pgjdbc reports for character columns; any other {@code VARCHAR} is an enum. */
-    private static final Set<String> TEXT_TYPES =
-        Set.of("varchar", "text", "bpchar", "char", "name");
-
     @Override
     public DataType createDataType(int sqlType, String sqlTypeName) throws DataTypeException {
       DataType created = super.createDataType(sqlType, sqlTypeName);
@@ -109,12 +131,6 @@ public final class PostgresqlEngine implements DatabaseEngine {
       }
       return FloatingPointDataType.replacing(
           LocalTimestampDataType.withoutTimeZone(created, sqlTypeName));
-    }
-
-    private static boolean isEnum(int sqlType, String sqlTypeName) {
-      return sqlType == Types.VARCHAR
-          && sqlTypeName != null
-          && !TEXT_TYPES.contains(sqlTypeName.toLowerCase(Locale.ROOT));
     }
   }
 

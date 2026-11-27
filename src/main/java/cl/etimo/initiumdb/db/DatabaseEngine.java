@@ -1,6 +1,7 @@
 package cl.etimo.initiumdb.db;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
@@ -59,5 +60,20 @@ public interface DatabaseEngine {
    */
   default Optional<String> literal(Object value, int jdbcType, String typeName) {
     return SqlLiterals.standard(value, jdbcType);
+  }
+
+  /**
+   * Binds a hook variable (DEC-020), {@code null} included, so the database receives it with the
+   * type of the column it was read from. {@code jdbcType} and {@code typeName} come from that
+   * column's metadata. Defaults to {@code setNull} with the JDBC type, or {@code setObject}.
+   */
+  default void bindHookValue(
+      PreparedStatement statement, int index, Object value, int jdbcType, String typeName)
+      throws SQLException {
+    if (value == null) {
+      statement.setNull(index, jdbcType);
+    } else {
+      statement.setObject(index, value);
+    }
   }
 }

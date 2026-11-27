@@ -122,9 +122,9 @@ class PostgresqlHookVariablesTest {
         "post",
         SET
             + "INSERT INTO app.hook_log VALUES (1, ${big_id}, ${amount}, ${name}, ${code},"
-            + " ${born}, ${created}, ${active}, CAST(${status} AS app.status), NULL);\n"
+            + " ${born}, ${created}, ${active}, ${status}, NULL);\n"
             + "INSERT INTO app.hook_log VALUES (2, :big_id, :amount, :name, :code, :born,"
-            + " :created, :active, CAST(:status AS app.status), :created_tz);\n");
+            + " :created, :active, :status, :created_tz);\n");
     // When
     EngineScenario.Result prepared = scenario.prepare();
     // Then
@@ -139,6 +139,28 @@ class PostgresqlHookVariablesTest {
             scalar(
                 "SELECT count(*) FROM app.hook_log l JOIN app.customer c"
                     + " ON l.created_tz = c.created_tz WHERE l.id = 2"))
+        .isEqualTo("1");
+  }
+
+  @Test
+  void enumValuesBindWithTheirColumnTypeIncludingNull() throws Exception {
+    // Spec: README.md > Hook variables (:name binds with the type of its column, NULL included)
+    // Given
+    EngineScenario scenario = scenario();
+    scenario.writeHook(
+        "post",
+        "-- idb:set SELECT status AS saved_status FROM app.customer WHERE customer_id = 41\n"
+            + "UPDATE app.customer SET status = 'CLOSED';\n"
+            + "UPDATE app.customer SET status = :saved_status WHERE customer_id = 41;\n"
+            + "-- idb:set SELECT max(status) AS no_status FROM app.customer WHERE customer_id = 0\n"
+            + "INSERT INTO app.hook_log (id, status) VALUES (7, :no_status);\n");
+    // When
+    EngineScenario.Result prepared = scenario.prepare();
+    // Then
+    assertThat(prepared.exitCode()).as(prepared.err()).isZero();
+    assertThat(scalar("SELECT status FROM app.customer WHERE customer_id = 41"))
+        .isEqualTo("ACTIVE");
+    assertThat(scalar("SELECT count(*) FROM app.hook_log WHERE id = 7 AND status IS NULL"))
         .isEqualTo("1");
   }
 
