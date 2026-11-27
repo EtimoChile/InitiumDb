@@ -63,7 +63,8 @@ class OracleHookVariablesTest {
             + " LOCAL_NAME NVARCHAR2(40), LOCAL_CODE NCHAR(3), BORN DATE, CREATED TIMESTAMP(6))",
         "CREATE TABLE APP.HOOK_LOG (ID NUMBER(19), BIG_ID NUMBER(19), AMOUNT NUMBER(12,4),"
             + " RATE FLOAT, NAME VARCHAR2(40), CODE CHAR(5), LOCAL_NAME NVARCHAR2(40),"
-            + " LOCAL_CODE NCHAR(3), BORN DATE, CREATED TIMESTAMP(6))");
+            + " LOCAL_CODE NCHAR(3), BORN DATE, CREATED TIMESTAMP(6))",
+        "CREATE TABLE APP.FLOATS (ID NUMBER(19), BD BINARY_DOUBLE, BF BINARY_FLOAT)");
   }
 
   @AfterAll
@@ -75,6 +76,7 @@ class OracleHookVariablesTest {
   void cleanUp() throws SQLException {
     execute(
         "DELETE FROM APP.HOOK_LOG",
+        "DELETE FROM APP.FLOATS",
         "DELETE FROM APP.CUSTOMER",
         "INSERT INTO APP.CUSTOMER VALUES (41, 9007199254740993, -1234.5, 0.000125,"
             + " 'O''Brien', 'ab', N'ñandú', N'ñu',"
@@ -149,6 +151,30 @@ class OracleHookVariablesTest {
     // Then
     assertThat(prepared.exitCode()).as(prepared.err()).isZero();
     assertThat(scalar("SELECT APP.CUSTOMER_SEQ.NEXTVAL FROM DUAL")).isEqualTo("41");
+  }
+
+  @Test
+  void binaryFloatingPointValuesBindAsThemselvesIncludingNull() throws Exception {
+    // Spec: README.md > Hook variables (:name binds with the type of its column, NULL included)
+    // Given: values a NUMBER cannot hold
+    EngineScenario scenario = scenario();
+    scenario.writeHook(
+        "post",
+        "-- idb:set SELECT BINARY_DOUBLE_MAX AS big, BINARY_DOUBLE_NAN AS nan,"
+            + " BINARY_FLOAT_INFINITY AS inf, CAST(NULL AS BINARY_DOUBLE) AS no_value FROM DUAL\n"
+            + "INSERT INTO APP.FLOATS VALUES (1, :big, :inf);\n"
+            + "INSERT INTO APP.FLOATS VALUES (2, :nan, NULL);\n"
+            + "INSERT INTO APP.FLOATS VALUES (3, :no_value, NULL);\n");
+    // When
+    EngineScenario.Result prepared = scenario.prepare();
+    // Then
+    assertThat(prepared.exitCode()).as(prepared.err()).isZero();
+    assertThat(
+            scalar(
+                "SELECT COUNT(*) FROM APP.FLOATS WHERE (ID = 1 AND BD = BINARY_DOUBLE_MAX"
+                    + " AND BF = BINARY_FLOAT_INFINITY) OR (ID = 2 AND BD IS NAN)"
+                    + " OR (ID = 3 AND BD IS NULL)"))
+        .isEqualTo("3");
   }
 
   @Test

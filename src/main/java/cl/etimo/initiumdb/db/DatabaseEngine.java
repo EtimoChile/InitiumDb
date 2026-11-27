@@ -66,6 +66,16 @@ public interface DatabaseEngine {
   }
 
   /**
+   * The index after an engine-specific quoted section starting at {@code start} of a hook statement
+   * (such as PostgreSQL's {@code E'...'}), or {@code -1} when none starts there; hook variable
+   * references inside it are left as written (DEC-020). Standard {@code '...'} and {@code "..."}
+   * are handled by the caller. Defaults to none.
+   */
+  default int quotedSectionEnd(String sql, int start) {
+    return -1;
+  }
+
+  /**
    * Binds a hook variable (DEC-020), {@code null} included, so the database receives it with the
    * type of the column it was read from. {@code jdbcType} and {@code typeName} come from that
    * column's metadata. Defaults to {@code setNull} with the JDBC type, or {@code setObject}.

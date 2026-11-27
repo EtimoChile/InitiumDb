@@ -84,6 +84,39 @@ public final class PostgresqlEngine implements DatabaseEngine {
   }
 
   /**
+   * An escape string {@code E'...'} (not the end of a longer name), where a backslash escapes the
+   * next character, a quote included.
+   */
+  @Override
+  public int quotedSectionEnd(String sql, int start) {
+    char c = sql.charAt(start);
+    if ((c != 'E' && c != 'e')
+        || start + 1 >= sql.length()
+        || sql.charAt(start + 1) != '\''
+        || (start > 0 && isNamePart(sql.charAt(start - 1)))) {
+      return -1;
+    }
+    int i = start + 2;
+    while (i < sql.length()) {
+      char d = sql.charAt(i);
+      if (d == '\\') {
+        i += 2;
+      } else if (d == '\'' && i + 1 < sql.length() && sql.charAt(i + 1) == '\'') {
+        i += 2;
+      } else if (d == '\'') {
+        return i + 1;
+      } else {
+        i++;
+      }
+    }
+    return sql.length();
+  }
+
+  private static boolean isNamePart(char c) {
+    return Character.isLetterOrDigit(c) || c == '_' || c == '$';
+  }
+
+  /**
    * pgjdbc reads an enum as a {@code String} and would bind it as {@code varchar}, and binds a bit
    * string (and a {@code NULL} of {@code BIT}) as {@code boolean}, which those columns reject; they
    * are sent untyped ({@code OTHER}) so the server takes the column's type, as {@link

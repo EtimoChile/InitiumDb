@@ -6,6 +6,7 @@ import cl.etimo.initiumdb.db.LocalTimestampDataType;
 import cl.etimo.initiumdb.db.SqlIdentifiers;
 import cl.etimo.initiumdb.db.SqlLiterals;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -69,6 +70,31 @@ public final class OracleEngine implements DatabaseEngine {
       return rows.getObject(column, LocalDateTime.class);
     }
     return DatabaseEngine.super.hookValue(rows, column);
+  }
+
+  /**
+   * {@code BINARY_DOUBLE} and {@code BINARY_FLOAT} are bound as themselves, {@code NULL} included:
+   * bound untyped, the driver would send a {@code NUMBER}, which overflows past 1E126 and has no
+   * {@code NaN} (as {@link FloatingPointDataType#boundAs} does for datasets).
+   */
+  @Override
+  public void bindHookValue(
+      PreparedStatement statement, int index, Object value, int jdbcType, String typeName)
+      throws SQLException {
+    String name = typeName == null ? "" : typeName.toUpperCase(Locale.ROOT);
+    Integer bindType =
+        switch (name) {
+          case "BINARY_DOUBLE" -> FloatingPointDataType.ORACLE_BINARY_DOUBLE;
+          case "BINARY_FLOAT" -> FloatingPointDataType.ORACLE_BINARY_FLOAT;
+          default -> null;
+        };
+    if (bindType == null) {
+      DatabaseEngine.super.bindHookValue(statement, index, value, jdbcType, typeName);
+    } else if (value == null) {
+      statement.setNull(index, bindType);
+    } else {
+      statement.setObject(index, value, bindType);
+    }
   }
 
   /**
