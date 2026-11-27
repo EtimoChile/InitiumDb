@@ -46,6 +46,9 @@ class UpsertContractTest {
   private final List<Integer> batches = new ArrayList<>();
   private DatabaseConnection dbunit;
 
+  /** When set, the recording statement's {@code executeBatch} throws it instead of recording. */
+  private SQLException batchFailure;
+
   @BeforeEach
   void setUp() throws Exception {
     h2 =
@@ -119,6 +122,41 @@ class UpsertContractTest {
     assertThatThrownBy(() -> apply(engine, "<dataset><NO_KEY ID='1' NAME='a'/></dataset>"))
         .isInstanceOf(NoPrimaryKeyException.class);
     assertThat(statements).isEmpty();
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"oracle", "postgresql"})
+  void aFailingBatchNamesItsTableAndKeepsTheDatabaseReason(String engine) {
+    // Spec: README.md > Design principles (database-enforced integrity) and README.md >
+    // idb-prepare (a failure says what failed)
+    // Given: the driver rejects the batch naming only the constraint, as Oracle does
+    batchFailure =
+        new java.sql.BatchUpdateException(
+            "ORA-02291: integrity constraint (OWNER.FK_X) violated - parent key not found",
+            "23000",
+            2291,
+            new int[0]);
+
+    // When / Then
+    assertThatThrownBy(() -> apply(engine, "<dataset><ITEM ID='1' NAME='n'/></dataset>"))
+        .isInstanceOfSatisfying(
+            SQLException.class,
+            e -> {
+              assertThat(e.getMessage()).startsWith("table ITEM: ").contains("ORA-02291");
+              assertThat(e.getSQLState()).isEqualTo("23000");
+              assertThat(e.getErrorCode()).isEqualTo(2291);
+              assertThat(e.getCause()).isSameAs(batchFailure);
+            });
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"oracle", "postgresql"})
+  void aTableThatAppliesCleanlyRaisesNothing(String engine) throws Exception {
+    // Spec: README.md > idb-prepare (adversarial: the table context is added only on failure)
+    // When
+    apply(engine, "<dataset><ITEM ID='1' NAME='n'/><LINK A='1' B='2' NOTE='n'/></dataset>");
+    // Then
+    assertThat(batches).containsExactly(1, 1);
   }
 
   @Test
@@ -263,6 +301,9 @@ class UpsertContractTest {
                 rows.add(new ArrayList<>(bound.values()));
                 pending[0]++;
               } else if (name.equals("executeBatch")) {
+                if (batchFailure != null) {
+                  throw batchFailure;
+                }
                 batches.add(pending[0]);
                 pending[0] = 0;
                 return new int[0];

@@ -106,7 +106,19 @@ public abstract class BatchedUpsertOperation extends AbstractOperation {
     String sql = upsertSql(connection, tableName, columns, keys);
     try (PreparedStatement statement = connection.getConnection().prepareStatement(sql)) {
       writeRows(table, columns, statement);
+    } catch (SQLException e) {
+      throw inTable(tableName, e);
     }
+  }
+
+  /**
+   * A batch failure names only what the driver reports, which on Oracle is the constraint, not the
+   * table. The table is added, keeping the database's SQLState, vendor code and the failure itself
+   * as cause.
+   */
+  static SQLException inTable(String tableName, SQLException e) {
+    return new SQLException(
+        "table " + tableName + ": " + e.getMessage(), e.getSQLState(), e.getErrorCode(), e);
   }
 
   private static void writeRows(ITable table, Column[] columns, PreparedStatement statement)

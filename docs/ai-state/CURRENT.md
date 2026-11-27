@@ -8,7 +8,7 @@
 - Engines: `oracle` and `postgresql` as thin profiles (DEC-004); object names exact, SQL by engine rules (DEC-005).
 - `idb-capture` rejects table or column names that are not valid XML names (PEND-006 tracks encoding them).
 - Tooling: Maven, JUnit 5, AssertJ, Mockito 5.20.0 with byte-buddy 1.17.7 (needed on Java 25), Testcontainers 2.0.2, Spotless (google-java-format 1.28.0), `-Xlint:all -Werror`, pre-commit.
-- Verified on JDK 25.0.2 (`C:\Util\Java\jdk-25.0.2`; the default `JAVA_HOME` is JDK 1.7, so set it explicitly): `mvn verify` (123 unit tests, 5 `DistributionIT`) and `mvn spotless:check` pass.
+- Verified on JDK 25.0.2 (`C:\Util\Java\jdk-25.0.2`; the default `JAVA_HOME` is JDK 1.7, so set it explicitly): `mvn verify` (127 unit tests, 5 `DistributionIT`) and `mvn spotless:check` pass.
 - JDBC drivers are user-supplied (`drivers/` folder, DEC-008).
 - Packaging: `mvn package` builds the folder distribution and archives (DEC-008); `DistributionIT` (Failsafe, in `mvn verify`) runs the launchers; the shell launchers were checked on Git Bash only, not on a real Unix.
 - Oracle and PostgreSQL apply the dataset with batched upserts (`BatchedUpsertOperation`, DEC-011): `MERGE` on Oracle, `INSERT ... ON CONFLICT` on PostgreSQL. Both are checked against real containers (opt-in profiles) and Oracle also on H2; timing on the user's Oracle case: 520 s with `REFRESH` vs 10 s.
