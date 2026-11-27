@@ -24,3 +24,4 @@ Contract-to-class map (extend as contracts are defined):
 | README > Installation (launchers, `lib/`) | `DistributionIT` (Failsafe, runs after `package` in `mvn verify`) |
 | README > Captured dataset (values per type) | `DatasetTypesTest`; per engine `integration/<engine>/*TypeRoundTripTest` |
 | README > Directory layout (shipped `examples/<engine>`) | per engine `integration/<engine>/*ExampleTest` |
+| README > Captured dataset (table order, keys, grants) | per engine `integration/<engine>/*TableOrderTest` |
