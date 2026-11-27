@@ -59,7 +59,8 @@ class PostgresqlHookVariablesTest {
             + " created_tz timestamptz)",
         "CREATE TABLE app.hook_log (id bigint, big_id bigint, amount numeric(12,4),"
             + " name varchar(40), code char(5), born date, created timestamp(6),"
-            + " active boolean, status app.status, created_tz timestamptz, at time(6))");
+            + " active boolean, status app.status, created_tz timestamptz, at time(6),"
+            + " flag bit(1), bits varbit)");
   }
 
   @AfterAll
@@ -182,6 +183,26 @@ class PostgresqlHookVariablesTest {
     assertThat(prepared.exitCode()).as(prepared.err()).isZero();
     assertThat(scalar("SELECT name || '|' || at FROM app.hook_log WHERE id = 8"))
         .isEqualTo("C:\\tmp\\|12:34:56.123456");
+  }
+
+  @Test
+  void bitStringsBindWithTheirColumnTypeIncludingNull() throws Exception {
+    // Spec: README.md > Hook variables (:name binds with the type of its column, NULL included)
+    // Given: pgjdbc reports bit(1) as a boolean
+    EngineScenario scenario = scenario();
+    scenario.writeHook(
+        "post",
+        "-- idb:set SELECT B'1' AS one_bit, B'0101'::varbit AS bits, NULL::bit(1) AS no_bit\n"
+            + "INSERT INTO app.hook_log (id, flag, bits) VALUES (9, :one_bit, :bits);\n"
+            + "INSERT INTO app.hook_log (id, flag) VALUES (10, :no_bit);\n");
+    // When
+    EngineScenario.Result prepared = scenario.prepare();
+    // Then
+    assertThat(prepared.exitCode()).as(prepared.err()).isZero();
+    assertThat(scalar("SELECT flag::text || '|' || bits::text FROM app.hook_log WHERE id = 9"))
+        .isEqualTo("1|0101");
+    assertThat(scalar("SELECT count(*) FROM app.hook_log WHERE id = 10 AND flag IS NULL"))
+        .isEqualTo("1");
   }
 
   @Test

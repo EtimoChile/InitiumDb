@@ -56,6 +56,10 @@ public final class PostgresqlEngine implements DatabaseEngine {
     if ("timetz".equalsIgnoreCase(typeName)) {
       return rows.getObject(column, OffsetTime.class);
     }
+    if (isBitString(typeName)) {
+      // pgjdbc reads bit(1) as a boolean; its text keeps the bit string
+      return rows.getString(column);
+    }
     return DatabaseEngine.super.hookValue(rows, column);
   }
 
@@ -80,15 +84,16 @@ public final class PostgresqlEngine implements DatabaseEngine {
   }
 
   /**
-   * pgjdbc reads an enum as a {@code String} and would bind it as {@code varchar}, which an enum
-   * column rejects; it is sent untyped ({@code OTHER}) so the server takes the column's type, as
-   * {@link TextCastDataType} does for datasets.
+   * pgjdbc reads an enum as a {@code String} and would bind it as {@code varchar}, and binds a bit
+   * string (and a {@code NULL} of {@code BIT}) as {@code boolean}, which those columns reject; they
+   * are sent untyped ({@code OTHER}) so the server takes the column's type, as {@link
+   * TextCastDataType} does for datasets.
    */
   @Override
   public void bindHookValue(
       PreparedStatement statement, int index, Object value, int jdbcType, String typeName)
       throws SQLException {
-    if (isEnum(jdbcType, typeName)) {
+    if (isEnum(jdbcType, typeName) || isBitString(typeName)) {
       statement.setObject(index, value, Types.OTHER);
     } else {
       DatabaseEngine.super.bindHookValue(statement, index, value, jdbcType, typeName);
@@ -102,6 +107,10 @@ public final class PostgresqlEngine implements DatabaseEngine {
     return sqlType == Types.VARCHAR
         && sqlTypeName != null
         && !TEXT_TYPES.contains(sqlTypeName.toLowerCase(Locale.ROOT));
+  }
+
+  private static boolean isBitString(String typeName) {
+    return "bit".equalsIgnoreCase(typeName) || "varbit".equalsIgnoreCase(typeName);
   }
 
   private static boolean isTimestampTz(String typeName) {
