@@ -193,7 +193,8 @@ class OracleTableOrderTest {
 
     // Then
     assertThat(prepared.exitCode()).isEqualTo(1);
-    assertThat(prepared.err()).contains("ACCOUNT");
+    // The database's reason is reported; the batched MERGE does not name the table (PEND-019)
+    assertThat(prepared.err()).contains("ORA-02291");
     assertThat(scalar("SELECT COUNT(*) FROM TDM_OWNER.REGION")).isEqualTo("0");
   }
 
