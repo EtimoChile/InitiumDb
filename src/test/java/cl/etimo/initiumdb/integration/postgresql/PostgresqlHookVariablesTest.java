@@ -206,6 +206,22 @@ class PostgresqlHookVariablesTest {
   }
 
   @Test
+  void referencesInsideEscapeStringsAreLeftAsWritten() throws Exception {
+    // Spec: README.md > Hook variables (nothing is replaced inside string literals)
+    // Given: an escaped quote in E'...' does not end the literal
+    EngineScenario scenario = scenario();
+    scenario.writeHook(
+        "post",
+        "-- idb:run-if SELECT 1 WHERE E'it\\'s :missing ${missing}' IS NOT NULL\n"
+            + "INSERT INTO app.hook_log (id, name) VALUES (11, E'it\\'s :missing');\n");
+    // When
+    EngineScenario.Result prepared = scenario.prepare();
+    // Then
+    assertThat(prepared.exitCode()).as(prepared.err()).isZero();
+    assertThat(scalar("SELECT name FROM app.hook_log WHERE id = 11")).isEqualTo("it's :missing");
+  }
+
+  @Test
   void aSequenceMovesPastTheAppliedKeysThroughAnIdentifierVariable() throws Exception {
     // Spec: README.md > Hook variables ($${name} writes an identifier; ${name} a number)
     // Given

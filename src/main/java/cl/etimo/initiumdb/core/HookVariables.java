@@ -193,11 +193,16 @@ public final class HookVariables {
     while (i < n) {
       char c = sql.charAt(i);
       if (c == '\'') {
-        int end = closing(sql, i, '\'');
+        int end = closing(sql, i, '\'', false);
+        out.append(sql, i, end);
+        i = end;
+      } else if (isEscapeStringStart(sql, i)) {
+        // PostgreSQL E'...': a backslash escapes the next character, a quote included
+        int end = closing(sql, i + 1, '\'', true);
         out.append(sql, i, end);
         i = end;
       } else if (c == '"') {
-        int end = closing(sql, i, '"');
+        int end = closing(sql, i, '"', false);
         out.append(quotedIdentifier(sql.substring(i, end)));
         i = end;
       } else if (sql.startsWith("--", i)) {
@@ -328,11 +333,25 @@ public final class HookVariables {
     return end + 1;
   }
 
-  /** The index after a quoted section; a doubled quote is an escape. */
-  private static int closing(String sql, int start, char quote) {
+  /** {@code E'} or {@code e'} that is not the end of a longer name. */
+  private static boolean isEscapeStringStart(String sql, int i) {
+    char c = sql.charAt(i);
+    return (c == 'E' || c == 'e')
+        && i + 1 < sql.length()
+        && sql.charAt(i + 1) == '\''
+        && (i == 0 || !isNamePart(sql.charAt(i - 1)));
+  }
+
+  /**
+   * The index after a quoted section; a doubled quote is an escape, and with {@code backslash} so
+   * is a backslash before any character.
+   */
+  private static int closing(String sql, int start, char quote, boolean backslash) {
     int i = start + 1;
     while (i < sql.length()) {
-      if (sql.charAt(i) == quote) {
+      if (backslash && sql.charAt(i) == '\\') {
+        i += 2;
+      } else if (sql.charAt(i) == quote) {
         if (i + 1 < sql.length() && sql.charAt(i + 1) == quote) {
           i += 2;
         } else {
