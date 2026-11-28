@@ -1,12 +1,12 @@
 # InitiumDb
 
-**Configuration-driven preparation of relational database test data.**
+**Version-controlled test data for non-production relational databases: capture once, prepare before every test run.**
 
 InitiumDb captures selected records from development or QA databases and prepares those records again before automated test suites. The datasets are stored as version-controlled files alongside the tests, making the initial data setup repeatable without requiring a database clone or proprietary test framework.
 
 InitiumDb is intended **only for development and QA databases, never production**. It does not provision databases, create schemas or control objects, manage grants, or execute application tests.
 
-> **Project status:** early releases (0.x). `idb-init`, `idb-crypt`, `idb-capture` and `idb-prepare` are implemented for Oracle and PostgreSQL and published on [GitHub Releases](https://github.com/EtimoChile/InitiumDb/releases); behavior and configuration may still change between 0.x versions (see [`CHANGELOG.md`](CHANGELOG.md)). Items explicitly marked *to be defined* remain open.
+> **Project status:** early releases (0.x). `idb-init`, `idb-crypt`, `idb-capture` and `idb-prepare` are implemented for Oracle and PostgreSQL and published on [GitHub Releases](https://github.com/EtimoChile/InitiumDb/releases); behavior and configuration may still change between 0.x versions (see [`CHANGELOG.md`](CHANGELOG.md)).
 
 ## Overview
 
@@ -19,10 +19,50 @@ InitiumDb is intended **only for development and QA databases, never production*
 - **Stay framework-agnostic.** Playwright is a typical E2E framework to pair it with, but InitiumDb does not depend on it.
 - **Fail simply.** On error, report the failure and return exit code `1`. There are no checkpoints or partial-run resumption mechanisms; the operator or pipeline reruns the command from the beginning.
 
+## Workflow
+
+A test data case is built iteratively, in a non-production environment, until the automated test passes twice in a row on data restored by `idb-prepare`:
+
+```mermaid
+flowchart LR
+    A["Prepare data<br/>manually"] --> B[idb-capture]
+    B --> P[idb-prepare]
+    P --> C[Run test]
+    C --> D{Result}
+    D -- Passed --> Q{"Second pass<br/>in a row?"}
+    Q -- Yes --> G[Commit]
+    Q -- No --> P
+    D -- "Test or system<br/>defect" --> E["Fix test<br/>or system"]
+    E --> P
+    D -- "Data defect" --> H["idb-prepare,<br/>fix data"]
+    H --> B
+```
+
+1. **Prepare the data manually** with whatever means suit the case: application maintenance screens, SQL, or other systems of the organization. InitiumDb does not build the scenario.
+2. **Capture** it with `idb-capture` once the data is ready for the test.
+3. **Prepare and run the test.** Run `idb-prepare`, then the automated test. When the test fails, the developer decides the cause:
+   - **Test or system defect.** The data was right. Fix the test or the system under test and go back to `idb-prepare`, which restores the captured data the failed run modified. No new capture is needed.
+   - **Data defect.** The data was not what the test needs. Run `idb-prepare` to return to the captured state, fix the data manually (or the capture queries or hooks, when the problem lies there), and capture again.
+4. **Pass twice in a row.** After a pass, run `idb-prepare` and the test once more. The first pass can still rely on data left in the database rather than in the datasets; the second shows that `idb-prepare` undoes what a test run changed. It cannot show that the capture missed nothing (see [Uncaptured data](#uncaptured-data)). `REFRESH` does not delete rows a run inserted, so cleanup belongs in the hooks; see [`idb-prepare`](#idb-prepare).
+5. **Commit** the case definition, queries, hooks and datasets together with the test. From then on, CI/CD runs `idb-prepare` before the test; `idb-capture` is not part of CI/CD.
+
+### Uncaptured data
+
+`idb-prepare` restores only what the datasets and hooks contain. If a test needs data the capture missed, and the test itself does not change that data, the test still passes every run in the environment where the case was built: the data is simply there. The omission shows up later, when something outside the case changes or removes that data (another automated test, a manual change, a refresh of the environment) or when the case runs on a different database. In end-to-end tests that cross services of several business domains, the data a test depends on is hard to know in full, so this cannot be ruled out.
+
+**When a published case starts failing, always consider an omission in the capture as a possible cause**, not only a defect in the test or the system. Once found, the missing data is added to the capture queries (or the hooks) and the case is captured again, so the same omission does not recur.
+
+Practices that reduce omissions:
+
+- **Determine the required data in depth.** Follow what each step of the test reads across the services involved, not only the records it visibly creates or shows.
+- **Use disjoint data in unrelated tests.** Cases that do not share rows (own customers, contracts, codes) cannot break each other; shared rows are the most common source of interference.
+- **Enable database or JDBC tracing** while building the case (SQL logs, engine traces, a JDBC proxy) and compare the tables the test reads with the tables captured. Each table read but not captured is either reference data that every environment is expected to hold or an omission.
+- **Keep a catalog of data requirements per service**: which data each service operation reads. It grows with every omission found and shortens the analysis of the next case that uses the same services.
+
 ## Scope and design principles
 
 1. **Non-production use only.** Intended targets are development and QA databases. Access controls and independently verified connection settings should prevent accidental production access; a YAML environment label alone is not a security boundary.
-2. **Four executables only.** `idb-capture` and `idb-prepare` operate on data; `idb-init` and `idb-crypt` set up configuration and local secrets. There is no `validate`, `replay`, or `--mode` interface.
+2. **Four executables only.** `idb-capture` and `idb-prepare` operate on data; `idb-init` and `idb-crypt` set up configuration and local secrets.
 3. **Sequential execution.** No parallelism or dependency graph. The author of the case controls the order of database steps, queries and dataset tables.
 4. **No database installation.** No InitiumDb tables, locks, users, roles, grants, sequences or other objects are created.
 5. **No automatic recovery.** No persisted execution state or resume-from-checkpoint logic.
@@ -57,17 +97,9 @@ Unpack it where you keep tools (for example `/opt/` or `C:\Util\`) and put `init
 
 The launchers use `JAVA_HOME` when it is set and otherwise `java` from the `PATH`; Java 25 or later is required. Extra JVM options can be passed in `IDB_JAVA_OPTS`. JDBC drivers are not distributed, so their licenses never constrain the Apache 2.0 distribution: download the driver for your engine (PostgreSQL, Oracle, ...) from its vendor and copy the jar into `drivers/`. Without it, the commands fail with a message pointing to that folder.
 
-### Building and releasing
+### Building from source
 
-`mvn package` builds the distribution folder `target/initiumdb-<version>-dist/initiumdb/` and the archives `target/initiumdb-<version>-dist.zip` and `.tar.gz`. On the `development` branch the version is `X.Y.Z-SNAPSHOT` (a build in progress); a release has no suffix.
-
-To release from `main` (for example `0.3.0`):
-
-1. Rename the `Unreleased` heading of `CHANGELOG.md` to the version being released and commit it on `development`.
-2. On a branch `release/0.3.0` cut from `development`, set the version and commit it: `mvn versions:set -DnewVersion=0.3.0 -DgenerateBackupPoms=false`, then `git commit -am "Release 0.3.0"`. `main` is protected: push the branch and merge it with a pull request, using a merge commit (not squash) so the tag stays on `main`.
-3. After the merge, tag the merge commit on `main` and push the tag: `git tag v0.3.0 && git push origin v0.3.0`.
-4. The `Release` workflow (`.github/workflows/release.yml`) checks that the tag equals the pom version, runs `mvn clean verify` and publishes the GitHub release with the archives and `SHA256SUMS`.
-5. Back on `development`, merge `main` and move to the next snapshot: `mvn versions:set -DnewVersion=0.4.0-SNAPSHOT -DgenerateBackupPoms=false`.
+`mvn package` builds the same distribution under `target/`. Building, testing and the release procedure are described in [`DEVELOPMENT.md`](DEVELOPMENT.md).
 
 ## Commands
 
@@ -317,18 +349,7 @@ IDB_CREDENTIAL_CRM=... idb-prepare --case testdata/regression --environment dev
 
 Secrets are never stored in `case.yml` or `dataset.xml`, and must not appear in logs.
 
-InitiumDb separates connection resolution from data operations. The intended Java abstraction is:
-
-```java
-public interface ConnectionResolver {
-    java.sql.Connection resolve(
-        String environment,
-        String databaseAlias
-    ) throws java.sql.SQLException;
-}
-```
-
-The built-in resolver reads each password from the `IDB_CREDENTIAL_<NAME>` environment variable (the credential name as written), falling back to the encrypted local secrets file (see [Local secrets](#local-secrets)). A corporate resolver may integrate with a **proprietary CD mechanism** without coupling the open-source core to it. The exact external credential-provider contract and CI-to-CD-mechanism access are **to be defined**.
+The built-in credential provider reads each password from the `IDB_CREDENTIAL_<NAME>` environment variable (the credential name as written), falling back to the encrypted local secrets file (see [Local secrets](#local-secrets)). Other sources, such as a corporate vault or the secret store of a CI/CD platform, can be supported by developing a credential provider; see [Credential providers](DEVELOPMENT.md#credential-providers) in `DEVELOPMENT.md`.
 
 ### Initialization
 
@@ -348,7 +369,7 @@ idb-crypt --environment dev [--case path/to/testdata/regression] [--config-dir d
 
 `<config-dir>/<environment>.secrets.json` maps each credential name (the `credential` of the environment file, by default the alias) to its password. `idb-crypt` encrypts every non-empty cleartext value in place with AES-256-GCM (`enc:v1:aes256gcm:<nonce>:<ciphertext>`); already encrypted and empty values are left untouched, so it is idempotent. `idb-capture` and `idb-prepare` do the same on the fly: when the secrets file is the source of a password and holds cleartext values, they encrypt the whole file in place (creating the master key if none exists), report it on stderr without printing any secret, and carry on with the password; a password given by `IDB_CREDENTIAL_<NAME>` never touches the file. A missing, malformed or non-string-valued secrets file fails with exit code `1`. `--case` is accepted so an `idb-prepare` command line can be reused, but it is not read.
 
-Master key: the `IDB_MASTER_KEY` environment variable (hex of 64 chars, base64 of 32 bytes, or a raw 32-byte value); otherwise `~/.initiumdb/idb.key`, created with owner-only permissions where the file system supports POSIX permissions. This is protection of secrets at rest on one machine, not a vault: anyone holding the key can decrypt. Neither command prints decrypted secrets, and error messages never echo secrets or key material. How CI/CD supplies the key or integrates a corporate provider (e.g. a proprietary CD mechanism) remains **to be defined**.
+Master key: the `IDB_MASTER_KEY` environment variable (hex of 64 chars, base64 of 32 bytes, or a raw 32-byte value); otherwise `~/.initiumdb/idb.key`, created with owner-only permissions where the file system supports POSIX permissions. This is protection of secrets at rest on one machine, not a vault: anyone holding the key can decrypt. Neither command prints decrypted secrets, and error messages never echo secrets or key material. CI/CD does not need the key or the secrets file: its secret store supplies each password as `IDB_CREDENTIAL_<NAME>`, and other sources can be added with a [credential provider](DEVELOPMENT.md#credential-providers).
 
 A plain environment label such as `environment: qa` cannot establish that the JDBC endpoint is truly non-production. Deployments should use restricted database accounts and enforce environment boundaries outside InitiumDb as well.
 
@@ -410,8 +431,7 @@ Engine-specific behavior is isolated in a thin per-engine profile (DBUnit data t
 The following items should be settled before considering this README an implementation contract:
 
 1. Whether the configuration directory needs a discovery mechanism beyond `--config-dir` and `~/.initiumdb`.
-2. Secret-provider contract and integration with CI/CD and proprietary CD mechanisms.
-3. Portability rules for datasets captured in one environment and applied to another.
+2. Portability rules for datasets captured in one environment and applied to another.
 
 ## Security
 

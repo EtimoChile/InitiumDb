@@ -66,6 +66,37 @@ mvn test -Poracle-integration
 
 The Oracle image is large and slow to start; allow several minutes.
 
+## Credential providers
+
+`idb-capture` and `idb-prepare` obtain each database password from a
+`CredentialProvider` (`cl.etimo.initiumdb.core`), looked up by the `credential`
+name of the environment configuration:
+
+```java
+public interface CredentialProvider {
+  String password(String credential);
+}
+```
+
+The built-in `DefaultCredentialProvider` reads the `IDB_CREDENTIAL_<NAME>`
+environment variable and falls back to the encrypted local secrets file.
+`JdbcConnectionResolver` combines the provider with the environment
+configuration to open the connection, so a provider deals only with secrets,
+never with JDBC URLs or connections.
+
+A provider for another source (a corporate vault, the secret store of a CI/CD
+platform) implements the same interface. It must:
+
+- never log, print or include the password in an exception message;
+- fail with an `InitiumDbException` that names the credential and the source,
+  so the command reports it and exits with code `1`;
+- not cache passwords beyond the run of a command.
+
+A provider is plugged in where `DataCommand` (`cl.etimo.initiumdb.cli`) builds
+the `JdbcConnectionResolver`, in place of or around `DefaultCredentialProvider`
+(for example, trying the new source first and falling back to the built-in
+one), and the distribution is rebuilt with `mvn package`.
+
 ## Branches and releases
 
 - `development` is the integration branch; work branches start from it and
@@ -73,7 +104,27 @@ The Oracle image is large and slow to start; allow several minutes.
 - `main` holds releases only and is protected: changes arrive through a pull
   request from a `release/X.Y.Z` branch, merged with a merge commit.
 - Releases are tagged `vX.Y.Z` on `main`; the tag triggers
-  `.github/workflows/release.yml`. The step-by-step procedure is in the
-  "Building and releasing" section of `README.md`.
-- Before tagging, rename the `Unreleased` heading of `CHANGELOG.md` to the
-  version and date it is released.
+  `.github/workflows/release.yml`.
+
+`mvn package` builds the distribution folder
+`target/initiumdb-<version>-dist/initiumdb/` and the archives
+`target/initiumdb-<version>-dist.zip` and `.tar.gz`. On the `development`
+branch the version is `X.Y.Z-SNAPSHOT` (a build in progress); a release has no
+suffix.
+
+To release from `main` (for example `0.3.0`):
+
+1. Rename the `Unreleased` heading of `CHANGELOG.md` to the version being
+   released and the release date, and commit it on `development`.
+2. On a branch `release/0.3.0` cut from `development`, set the version and
+   commit it: `mvn versions:set -DnewVersion=0.3.0 -DgenerateBackupPoms=false`,
+   then `git commit -am "Release 0.3.0"`. `main` is protected: push the branch
+   and merge it with a pull request, using a merge commit (not squash) so the
+   tag stays on `main`.
+3. After the merge, tag the merge commit on `main` and push the tag:
+   `git tag v0.3.0 && git push origin v0.3.0`.
+4. The `Release` workflow (`.github/workflows/release.yml`) checks that the tag
+   equals the pom version, runs `mvn clean verify` and publishes the GitHub
+   release with the archives and `SHA256SUMS`.
+5. Back on `development`, merge `main` and move to the next snapshot:
+   `mvn versions:set -DnewVersion=0.4.0-SNAPSHOT -DgenerateBackupPoms=false`.
