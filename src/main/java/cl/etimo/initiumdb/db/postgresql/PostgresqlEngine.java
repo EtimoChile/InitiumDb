@@ -84,19 +84,68 @@ public final class PostgresqlEngine implements DatabaseEngine {
   }
 
   /**
-   * An escape string {@code E'...'} (not the end of a longer name), where a backslash escapes the
-   * next character, a quote included.
+   * PostgreSQL's own quoted sections: an escape string {@code E'...'}, where a backslash escapes the
+   * next character, a quote included; a dollar-quoted string {@code $$...$$} or {@code
+   * $tag$...$tag$} ({@code $${} always starts an identifier reference); and a block comment, which
+   * nests.
    */
   @Override
   public int quotedSectionEnd(String sql, int start) {
+    boolean afterName = start > 0 && isNamePart(sql.charAt(start - 1));
     char c = sql.charAt(start);
+    if (sql.startsWith("/*", start)) {
+      return nestedCommentEnd(sql, start);
+    }
+    if (c == '$' && !afterName) {
+      return dollarQuotedEnd(sql, start);
+    }
     if ((c != 'E' && c != 'e')
         || start + 1 >= sql.length()
         || sql.charAt(start + 1) != '\''
-        || (start > 0 && isNamePart(sql.charAt(start - 1)))) {
+        || afterName) {
       return -1;
     }
-    int i = start + 2;
+    return escapeStringEnd(sql, start + 2);
+  }
+
+  private static int nestedCommentEnd(String sql, int start) {
+    int depth = 0;
+    int i = start;
+    while (i < sql.length()) {
+      if (sql.startsWith("/*", i)) {
+        depth++;
+        i += 2;
+      } else if (sql.startsWith("*/", i)) {
+        i += 2;
+        if (--depth == 0) {
+          return i;
+        }
+      } else {
+        i++;
+      }
+    }
+    return sql.length();
+  }
+
+  private static int dollarQuotedEnd(String sql, int start) {
+    int i = start + 1;
+    if (i < sql.length() && (Character.isLetter(sql.charAt(i)) || sql.charAt(i) == '_')) {
+      while (i < sql.length() && isNamePart(sql.charAt(i)) && sql.charAt(i) != '$') {
+        i++;
+      }
+    }
+    if (i >= sql.length()
+        || sql.charAt(i) != '$'
+        || (i == start + 1 && sql.startsWith("$${", start))) {
+      return -1;
+    }
+    String delimiter = sql.substring(start, i + 1);
+    int end = sql.indexOf(delimiter, i + 1);
+    return end < 0 ? sql.length() : end + delimiter.length();
+  }
+
+  private static int escapeStringEnd(String sql, int from) {
+    int i = from;
     while (i < sql.length()) {
       char d = sql.charAt(i);
       if (d == '\\') {

@@ -28,7 +28,8 @@ import java.util.regex.Pattern;
  *       schema-qualified. {@code $${} wins over {@code $} followed by {@code ${}.
  * </ul>
  *
- * Nothing is replaced inside single-quoted literals or comments. Inside a double-quoted identifier
+ * Nothing is replaced inside single-quoted literals, comments or the engine's own quoted sections
+ * ({@link DatabaseEngine#quotedSectionEnd}). Inside a double-quoted identifier
  * only {@code $${name}} is, with an unqualified identifier, so {@code "$${X}"} writes a mixed-case
  * name. Names are case-insensitive; an undefined name fails. Values are never printed.
  */

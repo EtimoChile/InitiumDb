@@ -223,6 +223,24 @@ class PostgresqlHookVariablesTest {
   }
 
   @Test
+  void referencesInsideDollarQuotesAndNestedCommentsAreLeftAsWritten() throws Exception {
+    // Spec: README.md > Hook variables (nothing is replaced inside string literals or comments)
+    // Given
+    EngineScenario scenario = scenario();
+    scenario.writeHook(
+        "post",
+        "INSERT INTO app.hook_log (id, name) VALUES (12, $$a :missing ${missing}$$);\n"
+            + "INSERT INTO app.hook_log (id, name) VALUES (13, $q$b :missing$q$)"
+            + " /* outer /* inner */ :missing */;\n");
+    // When
+    EngineScenario.Result prepared = scenario.prepare();
+    // Then
+    assertThat(prepared.exitCode()).as(prepared.err()).isZero();
+    assertThat(scalar("SELECT string_agg(name, '|' ORDER BY id) FROM app.hook_log"))
+        .isEqualTo("a :missing ${missing}|b :missing");
+  }
+
+  @Test
   void aSequenceMovesPastTheAppliedKeysThroughAnIdentifierVariable() throws Exception {
     // Spec: README.md > Hook variables ($${name} writes an identifier; ${name} a number)
     // Given

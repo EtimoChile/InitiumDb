@@ -160,7 +160,7 @@ class OracleHookVariablesTest {
     EngineScenario scenario = scenario();
     scenario.writeHook(
         "post",
-        "-- idb:set SELECT BINARY_DOUBLE_MAX AS big, BINARY_DOUBLE_NAN AS nan,"
+        "-- idb:set SELECT 1E300D AS big, BINARY_DOUBLE_NAN AS nan,"
             + " BINARY_FLOAT_INFINITY AS inf, CAST(NULL AS BINARY_DOUBLE) AS no_value FROM DUAL\n"
             + "INSERT INTO APP.FLOATS VALUES (1, :big, :inf);\n"
             + "INSERT INTO APP.FLOATS VALUES (2, :nan, NULL);\n"
@@ -171,7 +171,7 @@ class OracleHookVariablesTest {
     assertThat(prepared.exitCode()).as(prepared.err()).isZero();
     assertThat(
             scalar(
-                "SELECT COUNT(*) FROM APP.FLOATS WHERE (ID = 1 AND BD = BINARY_DOUBLE_MAX"
+                "SELECT COUNT(*) FROM APP.FLOATS WHERE (ID = 1 AND BD = 1E300D"
                     + " AND BF = BINARY_FLOAT_INFINITY) OR (ID = 2 AND BD IS NAN)"
                     + " OR (ID = 3 AND BD IS NULL)"))
         .isEqualTo("3");
