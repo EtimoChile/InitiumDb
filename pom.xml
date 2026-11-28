@@ -10,7 +10,7 @@
   <packaging>jar</packaging>
 
   <name>InitiumDb</name>
-  <description>Configuration-driven preparation of relational database test data</description>
+  <description>Version-controlled test data for non-production relational databases: capture once, prepare before every test run</description>
   <url>https://github.com/EtimoChile/InitiumDb</url>
   <inceptionYear>2026</inceptionYear>
   <organization>

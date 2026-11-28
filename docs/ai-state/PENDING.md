@@ -4,7 +4,6 @@ States: `OPEN`, `IN_PROGRESS`, `DEFERRED`, `FUTURE`. Remove when resolved.
 
 | ID | Status | Pending | Owner artifact | Next action |
 |---|---|---|---|---|
-| PEND-005 | FUTURE | External secret-provider contract (proprietary CD mechanism, CI delivery of the master key); the built-in environment-variable and secrets-file provider is implemented (DEC-003) | `README.md` | Owner defines the provider contract |
 | PEND-006 | FUTURE | Support table and column names that are not valid XML names (spaces, symbols) by encoding them in the Flat XML dataset (ISO 9075 style `_xHHHH_`, literal `_x` as `_x005F_x`) with encode/decode `IDataSet` wrappers in capture and prepare; replaces the capture-time rejection | `CaptureService`, `PrepareService` | Owner schedules; round-trip test with a `"Full Name"` column on PostgreSQL and Oracle |
-| PEND-016 | FUTURE | Portability rules for datasets captured in one environment and applied to another (README open question) | `README.md` | Decide from real usage |
+| PEND-016 | FUTURE | Portability rules for datasets captured in one environment and applied to another (README open question 2) | `README.md` | Decide from real usage |
 | PEND-018 | FUTURE | Capture text holding characters XML 1.0 forbids (control characters below U+0020 other than tab/LF/CR, U+FFFE, U+FFFF) by encoding them in the dataset value with an escape that `idb-prepare` decodes; replaces the capture-time rejection of DEC-016 | `CaptureService`, `PrepareService` | Owner schedules if real data needs it; round-trip test with `CHR(1)` on PostgreSQL and Oracle |
