@@ -10,8 +10,8 @@ InitiumDb is intended **only for development and QA databases, never production*
 
 ## Overview
 
-- **Capture only what matters.** Developers first establish the desired data manually, using application interfaces or SQL. `capture` then executes configured `SELECT` statements and exports the selected rows.
-- **Prepare test data on demand.** `prepare` applies saved datasets to a target development or QA environment before tests.
+- **Capture only what matters.** Developers first establish the desired data manually, using application interfaces or SQL. `idb-capture` then executes configured `SELECT` statements and exports the selected rows.
+- **Prepare test data on demand.** `idb-prepare` applies saved datasets to a target development or QA environment before tests.
 - **Keep test definitions in Git.** Case definitions, queries, SQL hooks and datasets live in the application's test repository.
 - **Separate logical and physical configuration.** A case references logical database aliases; environment configuration maps them to JDBC connections.
 - **Keep credentials outside test artifacts.** Secrets are resolved at runtime, for local executions and CI/CD alike.
@@ -67,7 +67,7 @@ Practices that reduce omissions:
 4. **No database installation.** No InitiumDb tables, locks, users, roles, grants, sequences or other objects are created.
 5. **No automatic recovery.** No persisted execution state or resume-from-checkpoint logic.
 6. **Database-enforced integrity.** Existing foreign keys and constraints remain authoritative. If an operation violates a constraint, the database reports an error and the command fails.
-7. **Minimal privilege.** `capture` requires read access to selected tables; `prepare` requires only the DML privileges needed for the configured data and optional SQL hooks.
+7. **Minimal privilege.** `idb-capture` requires read access to selected tables; `idb-prepare` requires only the DML privileges needed for the configured data and optional SQL hooks.
 8. **No production-data-management guarantees.** InitiumDb is not an ILM, archiving, backup, masking or full database restoration tool.
 
 ## Installation
@@ -118,6 +118,10 @@ Every command accepts `--help` (or `-h`), which prints its usage, and `--version
 
 ### `idb-capture`
 
+```bash
+idb-capture --case path/to/testdata/regression --environment dev [--config-dir dir]
+```
+
 1. Read the case definition and the selected environment configuration.
 2. Resolve each logical database alias and its credentials.
 3. Execute the configured `SELECT` statements in their declared order.
@@ -130,6 +134,10 @@ Rows are streamed from the database straight into a temporary file (`.idb-captur
 
 ### `idb-prepare`
 
+```bash
+idb-prepare --case path/to/testdata/regression --environment qa [--config-dir dir] [--refresh optimized|dbunit]
+```
+
 1. Read the case definition and the selected environment configuration.
 2. Resolve each logical database alias and its credentials.
 3. Process the configured database steps sequentially.
@@ -140,11 +148,15 @@ The dataset is read as a stream and never held fully in memory, whatever its siz
 
 The initial dataset operation is DBUnit **`REFRESH`**: update matching rows and insert missing rows according to DBUnit's key matching. `REFRESH` **does not delete unrelated or extra rows**, so `idb-prepare` does not promise to restore an entire database or table to an exact snapshot. Anything beyond applying the dataset is left to the optional SQL hooks, by design: case-specific cleanup, sequence values, triggers and generated identifiers. InitiumDb does not delete extra rows, resynchronize sequences, disable triggers or regenerate keys on its own.
 
-On **Oracle** and **PostgreSQL**, DBUnit's `REFRESH` would cost two round trips per row (a `SELECT COUNT(*)` and then an `UPDATE` or `INSERT`), so those profiles apply the same semantics with one upsert per row sent in JDBC batches of 500 (`MERGE` on Oracle, `INSERT ... ON CONFLICT DO UPDATE` on PostgreSQL), matching rows by the primary key read from the database (a table without a primary key is rejected). One difference: an attribute missing from a row means `NULL` (Flat XML does not write nulls) and overwrites the stored value, where `REFRESH` would leave it unchanged. Tables with LOB or engine-specific column types are applied with DBUnit's own `REFRESH`, and so are PostgreSQL tables whose dataset omits a NOT NULL column without a default (a partial capture such as `SELECT col1, col2`), because `INSERT ... ON CONFLICT` checks NOT NULL before it looks for the existing row. `--refresh dbunit` forces DBUnit's original `REFRESH` on every engine (the default, `--refresh optimized`, uses the engine's faster operation when it has one), which allows comparing both. The output reports elapsed time per hook, per table, for the whole dataset (with the operation used) and per alias; the per-table time includes applying its rows, because the file is read as fast as the database accepts it.
+`--refresh` selects how the dataset is applied. The default, `--refresh optimized`, uses the engine's own upsert statement (`MERGE` on Oracle, `INSERT ... ON CONFLICT DO UPDATE` on PostgreSQL): each row is updated if a row with the same primary key exists, and inserted otherwise. Both options match rows by primary key, so every table in the dataset needs one; `idb-prepare` fails on a table without it. A table falls back to DBUnit's `REFRESH` when it has LOB or engine-specific column types, and on PostgreSQL also when its dataset omits a NOT NULL column without a default (a partial capture such as `SELECT col1, col2`), because `INSERT ... ON CONFLICT` checks NOT NULL before it looks for the existing row. `--refresh dbunit` applies every table with DBUnit's `REFRESH`, which allows comparing both.
+
+The optimized apply exists for speed and is implemented for Oracle and PostgreSQL. DBUnit's `REFRESH` sends each row on its own and first checks whether it exists (a `SELECT COUNT(*)`, then an `UPDATE` or `INSERT`), so every row costs two exchanges with the database. The upsert needs no check, and sends rows in groups of 500, one exchange per group. The result is the same, with one difference: an attribute missing from a row means `NULL` (Flat XML does not write nulls) and overwrites the stored value, where `REFRESH` leaves it unchanged.
+
+The output reports elapsed time per hook, per table, for the whole dataset (with the operation used) and per alias; the per-table time includes applying its rows, because the file is read as fast as the database accepts it.
 
 SQL hooks (`<ALIAS>.pre.sql`, `<ALIAS>.post.sql`) run in **autocommit**, exactly as written: each statement is committed as it runs, and a hook that contains its own `COMMIT`, `ROLLBACK` or DDL behaves as the engine defines. The dataset is applied in **one short transaction** (all or nothing), because DBUnit issues its statements row by row and autocommit would otherwise commit once per row. Nothing is rolled back across hooks, the dataset or steps: a failure stops the run, previously committed changes remain, and there is **no distributed transaction**. Re-running the entire `idb-prepare` command is the recovery strategy, so SQL hooks must be **idempotent**, or guarded so that a repeat does nothing (see [Conditional statements](#conditional-statements)): for example `DELETE` then `INSERT`, `MERGE`, or `TRUNCATE`; avoid relative updates such as `balance = balance + 100` and statements that advance sequences.
 
-**Interrupting a run leaves the data half-prepared.** The pre hook commits statement by statement before the dataset transaction starts, so if the command is killed (Ctrl+C, a lost connection, a timeout) or fails after the pre hook, the rows it deleted stay deleted and the dataset is rolled back. The tables are then empty or incomplete, not back to their earlier state. Run the whole `idb-prepare` command again to restore them. For the same reason, do not point a test or a measurement at a shared database without being ready to run `idb-prepare` to completion afterwards.
+**A failed or interrupted run leaves the data inconsistent.** Hooks commit statement by statement and each alias commits its dataset on its own, so a run that fails or is stopped (Ctrl+C, a lost connection, a timeout) may leave the case partly prepared. Only a successful run of the whole `idb-prepare` command brings it back to a consistent state.
 
 **SQL hooks are plain SQL, by design.** A hook script is a sequence of SQL statements, each ending in `;`. InitiumDb does not run procedural blocks (PL/SQL, `DO $$ ... $$`): it is not a scripting runtime, and hooks stay declarative and comparable across engines. Repeatability comes from writing idempotent statements, not from procedural logic. Comments (`-- ...`, `/* ... */`, including optimizer hints such as `/*+ ... */`) are sent to the database exactly as written and never split a statement; a script made only of comments is valid and runs nothing. A hook file that is absent or empty runs nothing.
 
@@ -411,12 +423,11 @@ Engine-specific behavior is isolated in a thin per-engine profile (DBUnit data t
 - Commands execute sequentially and stop on failure.
 - Successful execution returns exit code `0`; any failure returns `1`.
 - Logs identify the case, environment, database alias, current alias (with its position) and error cause without revealing credentials.
-- There is no dedicated `validate` command, `--mode` switch, preview mode, persistent status table or execution checkpoint.
 - Input validation occurs naturally when commands read configuration and files; invalid input fails the command.
 - Re-running `idb-prepare` starts from the first configured alias, even if a prior run partially completed.
-- Repeatability depends on the configured dataset and SQL hooks. SQL hooks that are not idempotent can prevent safe reruns.
+- Repeatability depends on the configured dataset and SQL hooks. SQL hooks that are not idempotent can prevent safe reruns; a statement that must not run twice can be guarded with `-- idb:run-if` or `-- idb:skip-if` (see [Conditional statements](#conditional-statements)).
 
-## Limitations
+## What InitiumDb does not do
 
 - **Not for production databases.**
 - **Not a full rollback or snapshot restore.** `REFRESH` does not remove all changes left by previous tests.
