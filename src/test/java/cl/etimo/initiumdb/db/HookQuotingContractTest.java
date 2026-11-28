@@ -52,8 +52,20 @@ class HookQuotingContractTest {
   }
 
   @Test
-  void oracleHasNoQuotedSectionsBeyondTheStandardOnes() {
+  void oracleAlternativeQuotesEndAtTheirDelimiterAndAQuote() {
+    String sql = "SELECT q'[it's :x]' || NQ'{a]' :x}' || q'!b'!' || Q'(c)' FROM DUAL, :y";
+    assertThat(section(oracle, sql, "q'[")).isEqualTo("q'[it's :x]'");
+    assertThat(section(oracle, sql, "NQ'")).isEqualTo("NQ'{a]' :x}'");
+    assertThat(section(oracle, sql, "q'!")).isEqualTo("q'!b'!'");
+    assertThat(section(oracle, sql, "Q'(")).isEqualTo("Q'(c)'");
+    // the end of a longer name is not a quote
+    assertThat(section(oracle, "SELECT seq'x' FROM DUAL", "q'")).isEmpty();
+  }
+
+  @Test
+  void eachEngineSkipsOnlyItsOwnQuotedSections() {
     assertThat(section(oracle, "SELECT E'x' FROM DUAL", "E'")).isEmpty();
     assertThat(section(oracle, "SELECT $$x$$ FROM DUAL", "$$")).isEmpty();
+    assertThat(section(postgresql, "SELECT q'[x]'", "q'")).isEmpty();
   }
 }

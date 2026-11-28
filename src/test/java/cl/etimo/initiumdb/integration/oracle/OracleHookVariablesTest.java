@@ -178,6 +178,22 @@ class OracleHookVariablesTest {
   }
 
   @Test
+  void referencesInsideAlternativeQuotesAreLeftAsWritten() throws Exception {
+    // Spec: README.md > Hook variables (nothing is replaced inside string literals)
+    // Given: a quote inside q'[...]' does not end the literal
+    EngineScenario scenario = scenario();
+    scenario.writeHook(
+        "post",
+        "-- idb:run-if SELECT 1 FROM DUAL WHERE q'[it's :missing]' IS NOT NULL\n"
+            + "INSERT INTO APP.HOOK_LOG (ID, NAME) VALUES (7, q'[it''s :missing]');\n");
+    // When
+    EngineScenario.Result prepared = scenario.prepare();
+    // Then
+    assertThat(prepared.exitCode()).as(prepared.err()).isZero();
+    assertThat(scalar("SELECT NAME FROM APP.HOOK_LOG WHERE ID = 7")).isEqualTo("it''s :missing");
+  }
+
+  @Test
   void nullValuesBindAsNullButCannotBeWrittenAsLiterals() throws Exception {
     // Spec: README.md > Hook variables (NULL: bind it; ${name} fails)
     // Given

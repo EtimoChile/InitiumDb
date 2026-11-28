@@ -73,6 +73,41 @@ public final class OracleEngine implements DatabaseEngine {
   }
 
   /**
+   * An alternative-quoted literal {@code q'X...X'} or {@code nq'X...X'} (not the end of a longer
+   * name), closed by {@code X}, or its pair for {@code [ { < (}, followed by a quote.
+   */
+  @Override
+  public int quotedSectionEnd(String sql, int start) {
+    if (start > 0 && isNamePart(sql.charAt(start - 1))) {
+      return -1;
+    }
+    int q = start;
+    if (Character.toLowerCase(sql.charAt(q)) == 'n') {
+      q++;
+    }
+    if (q + 2 >= sql.length()
+        || Character.toLowerCase(sql.charAt(q)) != 'q'
+        || sql.charAt(q + 1) != '\'') {
+      return -1;
+    }
+    char open = sql.charAt(q + 2);
+    char close =
+        switch (open) {
+          case '[' -> ']';
+          case '{' -> '}';
+          case '<' -> '>';
+          case '(' -> ')';
+          default -> open;
+        };
+    int end = sql.indexOf(close + "'", q + 3);
+    return end < 0 ? sql.length() : end + 2;
+  }
+
+  private static boolean isNamePart(char c) {
+    return Character.isLetterOrDigit(c) || c == '_' || c == '$' || c == '#';
+  }
+
+  /**
    * {@code BINARY_DOUBLE} and {@code BINARY_FLOAT} are bound as themselves, {@code NULL} included:
    * bound untyped, the driver would send a {@code NUMBER}, which overflows past 1E126 and has no
    * {@code NaN} (as {@link FloatingPointDataType#boundAs} does for datasets).
