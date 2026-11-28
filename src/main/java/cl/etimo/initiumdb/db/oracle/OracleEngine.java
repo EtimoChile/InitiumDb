@@ -4,10 +4,16 @@ import cl.etimo.initiumdb.db.DatabaseEngine;
 import cl.etimo.initiumdb.db.FloatingPointDataType;
 import cl.etimo.initiumdb.db.LocalTimestampDataType;
 import cl.etimo.initiumdb.db.SqlIdentifiers;
+import cl.etimo.initiumdb.db.SqlLiterals;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Types;
+import java.time.LocalDateTime;
 import java.util.Locale;
+import java.util.Optional;
 import org.dbunit.database.DatabaseConfig;
 import org.dbunit.dataset.datatype.DataType;
 import org.dbunit.dataset.datatype.DataTypeException;
@@ -55,6 +61,103 @@ public final class OracleEngine implements DatabaseEngine {
                 super.createDataType(sqlType, sqlTypeName), sqlTypeName);
       };
     }
+  }
+
+  /** {@code DATE} holds a time of day, so it is read as a {@link LocalDateTime} (DEC-020). */
+  @Override
+  public Object hookValue(ResultSet rows, int column) throws SQLException {
+    if (isDate(rows.getMetaData().getColumnTypeName(column))) {
+      return rows.getObject(column, LocalDateTime.class);
+    }
+    return DatabaseEngine.super.hookValue(rows, column);
+  }
+
+  /**
+   * An alternative-quoted literal {@code q'X...X'} or {@code nq'X...X'} (not the end of a longer
+   * name), closed by {@code X}, or its pair for {@code [ { < (}, followed by a quote.
+   */
+  @Override
+  public int quotedSectionEnd(String sql, int start) {
+    if (start > 0 && isNamePart(sql.charAt(start - 1))) {
+      return -1;
+    }
+    int q = start;
+    if (Character.toLowerCase(sql.charAt(q)) == 'n') {
+      q++;
+    }
+    if (q + 2 >= sql.length()
+        || Character.toLowerCase(sql.charAt(q)) != 'q'
+        || sql.charAt(q + 1) != '\'') {
+      return -1;
+    }
+    char open = sql.charAt(q + 2);
+    char close =
+        switch (open) {
+          case '[' -> ']';
+          case '{' -> '}';
+          case '<' -> '>';
+          case '(' -> ')';
+          default -> open;
+        };
+    int end = sql.indexOf(close + "'", q + 3);
+    return end < 0 ? sql.length() : end + 2;
+  }
+
+  private static boolean isNamePart(char c) {
+    return Character.isLetterOrDigit(c) || c == '_' || c == '$' || c == '#';
+  }
+
+  /**
+   * {@code BINARY_DOUBLE} and {@code BINARY_FLOAT} are bound as themselves, {@code NULL} included:
+   * bound untyped, the driver would send a {@code NUMBER}, which overflows past 1E126 and has no
+   * {@code NaN} (as {@link FloatingPointDataType#boundAs} does for datasets).
+   */
+  @Override
+  public void bindHookValue(
+      PreparedStatement statement, int index, Object value, int jdbcType, String typeName)
+      throws SQLException {
+    String name = typeName == null ? "" : typeName.toUpperCase(Locale.ROOT);
+    Integer bindType =
+        switch (name) {
+          case "BINARY_DOUBLE" -> FloatingPointDataType.ORACLE_BINARY_DOUBLE;
+          case "BINARY_FLOAT" -> FloatingPointDataType.ORACLE_BINARY_FLOAT;
+          default -> null;
+        };
+    if (bindType == null) {
+      DatabaseEngine.super.bindHookValue(statement, index, value, jdbcType, typeName);
+    } else if (value == null) {
+      statement.setNull(index, bindType);
+    } else {
+      statement.setObject(index, value, bindType);
+    }
+  }
+
+  /**
+   * The standard literals, except {@code DATE}, written with {@code TO_DATE} and an explicit format
+   * because the ANSI {@code DATE '...'} literal drops the time of day, {@code FLOAT}, an exact
+   * number whatever JDBC type the driver reports, and {@code BOOLEAN}, which is not supported.
+   */
+  @Override
+  public Optional<String> literal(Object value, int jdbcType, String typeName) {
+    if (isDate(typeName)) {
+      return value instanceof LocalDateTime date
+          ? Optional.of("TO_DATE('" + SqlLiterals.dateTime(date) + "', 'YYYY-MM-DD HH24:MI:SS')")
+          : Optional.empty();
+    }
+    if (jdbcType == Types.BOOLEAN || jdbcType == Types.BIT) {
+      return Optional.empty();
+    }
+    // FLOAT is a decimal NUMBER of up to 38 digits, read as a BigDecimal whatever type is reported
+    if (typeName != null
+        && typeName.equalsIgnoreCase("FLOAT")
+        && value instanceof java.math.BigDecimal decimal) {
+      return Optional.of(decimal.toPlainString());
+    }
+    return SqlLiterals.standard(value, jdbcType);
+  }
+
+  private static boolean isDate(String typeName) {
+    return typeName != null && typeName.equalsIgnoreCase("DATE");
   }
 
   @Override

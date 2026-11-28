@@ -104,7 +104,7 @@ Rows are streamed from the database straight into a temporary file (`.idb-captur
 4. For each alias, run the optional hook `<ALIAS>.pre.sql`, apply the dataset, then run the optional hook `<ALIAS>.post.sql`.
 5. Exit successfully only if every alias completes.
 
-The dataset is read as a stream and never held fully in memory, whatever its size: a first streaming pass reads its structure (and rejects a malformed XML file before the pre hook runs), a second one applies the rows. Progress is printed as it happens: the statements run by each hook (`pre hook: 3 of 4 statement(s) run`, guards excluded from the count) and each table with its row count (`CUSTOMER: 120 row(s)`), followed by the alias line (`Alias GL (dev) 1 of 2: prepared from ... in 13.37 s`; the environment name is shown, never the JDBC URL). No query is run to count rows.
+The dataset is read as a stream and never held fully in memory, whatever its size: a first streaming pass reads its structure (and rejects a malformed XML file before the pre hook runs), a second one applies the rows. Progress is printed as it happens: the statements run by each hook (`pre hook: 3 of 4 statement(s) run`, guards and `idb:set` excluded from the count) and each table with its row count (`CUSTOMER: 120 row(s)`), followed by the alias line (`Alias GL (dev) 1 of 2: prepared from ... in 13.37 s`; the environment name is shown, never the JDBC URL). No query is run to count rows.
 
 The initial dataset operation is DBUnit **`REFRESH`**: update matching rows and insert missing rows according to DBUnit's key matching. `REFRESH` **does not delete unrelated or extra rows**, so `idb-prepare` does not promise to restore an entire database or table to an exact snapshot. Anything beyond applying the dataset is left to the optional SQL hooks, by design: case-specific cleanup, sequence values, triggers and generated identifiers. InitiumDb does not delete extra rows, resynchronize sequences, disable triggers or regenerate keys on its own.
 
@@ -132,6 +132,39 @@ UPDATE app.customer SET status = 'ACTIVE' WHERE customer_id = 1001;
 - A directive applies to **one** statement, the next one. There is no nesting, `else` or procedural logic (see above). Statements without a directive always run.
 - The directive line is not sent to the database. Every other comment keeps no special meaning, including block comments, and the file remains valid SQL for other tools, which simply ignore the directive.
 - To keep a typo from silently running a statement that was meant to be conditional, a `-- idb:` comment must be a valid directive: an unknown name, a missing query, two directives for one statement, a directive after the statement has begun or a directive with no statement after it fail the run before any hook of that alias runs.
+
+### Hook variables
+
+A hook can read values from the database and use them in later statements, for example to move a sequence past the keys the dataset applied, which Oracle only accepts as a literal:
+
+```sql
+-- idb:set SELECT max(customer_id) AS max_id, max(created) AS last_created FROM app.customer
+ALTER SEQUENCE app.customer_seq RESTART START WITH ${max_id};
+DELETE FROM app.customer_log WHERE created > :last_created;
+
+-- idb:set SELECT sequence_name AS seq FROM user_sequences WHERE sequence_name LIKE 'ORDER%SEQ'
+ALTER SEQUENCE $${seq} RESTART START WITH 1000;
+```
+
+- `-- idb:set <query>` runs the query (the rest of the line, a trailing `;` is optional) and stores each column of its result as a variable named after the column's label. The query must return **exactly one row**, and every label must be a valid name (letters, digits and `_`, not starting with a digit) used once, so give expressions an alias (`max(id) AS max_id`). `idb:set` stands alone between statements: it is not attached to the next statement and cannot be guarded. Its lines count as neither statements nor guards in the output, which lists the names set (`post hook: set MAX_ID, LAST_CREATED`).
+- Names are case-insensitive. A later `idb:set` overwrites a variable of the same name. Variables live for one alias: a variable set in the pre hook can be used in the post hook, and the next alias starts with none.
+- A variable is referenced in hook statements, guard queries and `idb:set` queries in three ways:
+  - `:name` is a **bind variable**, sent to the database with its type, so it works for any type, including `NULL`. It starts with a `:` that does not follow a letter, digit, `_` or another `:`, so `::` casts and array slices such as `a[lo:hi]` are left alone. A statement with bind variables is sent as a prepared statement; on PostgreSQL, write a `?` operator in such a statement as `??`.
+  - `${name}` writes the value as an **SQL literal**, for the places that take no bind variable, such as DDL. The literal is written the same way whatever the locale or session settings, and only for the types below; any other type, or `NULL`, fails the run (use a bind variable, or `coalesce` in the `idb:set` query).
+  - `$${name}` writes the value **as is**, for object names. The value must be text that is an identifier (a letter or `_`, then letters, digits, `_`, `$` or `#`), optionally qualified by a schema (`APP.CUSTOMER`); anything else fails the run. `$${` is read before `${`, so `SYS$${X}` is `SYS` followed by `$${X}`.
+- Nothing is replaced inside string literals or comments, PostgreSQL's `E'...'`, `$$...$$` and `$tag$...$tag$` strings and nested `/* */` comments and Oracle's `q'[...]'` strings included; `$${` always starts an identifier reference, never a dollar-quoted string. Inside a double-quoted identifier only `$${name}` is, with an unqualified identifier, so a mixed-case name is written `"$${name}"`.
+- A reference to a variable that is not set fails the run, naming it. InitiumDb never prints variable values: progress shows only their names, and errors show the statement as written in the hook, also where the database's message quotes the SQL it received. A database message can still quote table data on its own (for example the duplicate key of a constraint violation).
+- Moving an Oracle identity or sequence is DDL and needs the privileges the engine requires for it.
+
+| Column type | Oracle | PostgreSQL | `${name}` writes |
+|---|---|---|---|
+| Exact number | `NUMBER`, `INTEGER`, `FLOAT` | `smallint`, `integer`, `bigint`, `numeric` | plain notation, no exponent: `12345`, `-1234.50` |
+| Text | `CHAR`, `VARCHAR2`, `NCHAR`, `NVARCHAR2` | `char`, `varchar`, `text` (and enums) | `'O''Brien'`: single quotes, each `'` doubled, padding kept; on PostgreSQL text holding a backslash is written `E'C:\\tmp'`, each `\` also doubled, so it does not depend on `standard_conforming_strings` |
+| Date | `DATE` | `date` | Oracle `TO_DATE('2026-11-27 13:45:00', 'YYYY-MM-DD HH24:MI:SS')`; PostgreSQL `DATE '2026-11-27'` |
+| Timestamp | `TIMESTAMP` | `timestamp` | `TIMESTAMP '2026-11-27 13:45:00.123'`, fraction without trailing zeros, none when zero |
+| Boolean | — | `boolean` | `TRUE`, `FALSE` |
+
+Floating point (`BINARY_FLOAT`, `BINARY_DOUBLE`, `real`, `double precision`), types with a time zone, LOBs, binary types, intervals, `json`, `uuid`, arrays and Oracle's `BOOLEAN` have no literal: use them as bind variables.
 
 
 ## Example repository layout

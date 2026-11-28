@@ -25,3 +25,4 @@ Contract-to-class map (extend as contracts are defined):
 | README > Captured dataset (values per type) | `DatasetTypesTest`; per engine `integration/<engine>/*TypeRoundTripTest` |
 | README > Directory layout (shipped `examples/<engine>`) | per engine `integration/<engine>/*ExampleTest` |
 | README > Captured dataset (table order, keys, grants) | per engine `integration/<engine>/*TableOrderTest` |
+| README > Hook variables (`idb:set`, binds, literals, identifiers) | `HookVariablesTest`; literals per engine `db/HookLiteralContractTest`; per engine `integration/<engine>/*HookVariablesTest` |

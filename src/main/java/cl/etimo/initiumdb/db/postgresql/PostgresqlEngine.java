@@ -5,12 +5,17 @@ import cl.etimo.initiumdb.db.DatabaseEngine;
 import cl.etimo.initiumdb.db.FloatingPointDataType;
 import cl.etimo.initiumdb.db.LocalTimestampDataType;
 import cl.etimo.initiumdb.db.SqlIdentifiers;
+import cl.etimo.initiumdb.db.SqlLiterals;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
+import java.time.OffsetDateTime;
+import java.time.OffsetTime;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import org.dbunit.database.DatabaseConfig;
 import org.dbunit.dataset.datatype.DataType;
@@ -36,6 +41,162 @@ public final class PostgresqlEngine implements DatabaseEngine {
   @Override
   public DatabaseOperation refreshOperation() {
     return new PostgresqlUpsertOperation();
+  }
+
+  /**
+   * {@code timestamptz} and {@code timetz} are read with their offset; they have no literal
+   * (DEC-020).
+   */
+  @Override
+  public Object hookValue(ResultSet rows, int column) throws SQLException {
+    String typeName = rows.getMetaData().getColumnTypeName(column);
+    if (isTimestampTz(typeName)) {
+      return rows.getObject(column, OffsetDateTime.class);
+    }
+    if ("timetz".equalsIgnoreCase(typeName)) {
+      return rows.getObject(column, OffsetTime.class);
+    }
+    if (isBitString(typeName)) {
+      // pgjdbc reads bit(1) as a boolean; its text keeps the bit string
+      return rows.getString(column);
+    }
+    return DatabaseEngine.super.hookValue(rows, column);
+  }
+
+  /**
+   * The standard literals, except that pgjdbc reports {@code bit(n)} and {@code boolean} both as
+   * {@code BIT} (only {@code boolean} gets {@code TRUE}/{@code FALSE}) and {@code timestamptz} as
+   * {@code TIMESTAMP} (no literal: time zones are not supported), and that text holding a backslash
+   * is written {@code E'...'} with backslashes doubled, so it reads the same whatever {@code
+   * standard_conforming_strings} is.
+   */
+  @Override
+  public Optional<String> literal(Object value, int jdbcType, String typeName) {
+    String name = typeName == null ? "" : typeName.toLowerCase(Locale.ROOT);
+    if ((jdbcType == Types.BIT && !name.equals("bool")) || isTimestampTz(name)) {
+      return Optional.empty();
+    }
+    Optional<String> standard = SqlLiterals.standard(value, jdbcType);
+    if (standard.isPresent() && value instanceof String text && text.indexOf('\\') >= 0) {
+      return Optional.of("E" + SqlLiterals.text(text.replace("\\", "\\\\")));
+    }
+    return standard;
+  }
+
+  /**
+   * PostgreSQL's own quoted sections: an escape string {@code E'...'}, where a backslash escapes the
+   * next character, a quote included; a dollar-quoted string {@code $$...$$} or {@code
+   * $tag$...$tag$} ({@code $${} always starts an identifier reference); and a block comment, which
+   * nests.
+   */
+  @Override
+  public int quotedSectionEnd(String sql, int start) {
+    boolean afterName = start > 0 && isNamePart(sql.charAt(start - 1));
+    char c = sql.charAt(start);
+    if (sql.startsWith("/*", start)) {
+      return nestedCommentEnd(sql, start);
+    }
+    if (c == '$' && !afterName) {
+      return dollarQuotedEnd(sql, start);
+    }
+    if ((c != 'E' && c != 'e')
+        || start + 1 >= sql.length()
+        || sql.charAt(start + 1) != '\''
+        || afterName) {
+      return -1;
+    }
+    return escapeStringEnd(sql, start + 2);
+  }
+
+  private static int nestedCommentEnd(String sql, int start) {
+    int depth = 0;
+    int i = start;
+    while (i < sql.length()) {
+      if (sql.startsWith("/*", i)) {
+        depth++;
+        i += 2;
+      } else if (sql.startsWith("*/", i)) {
+        i += 2;
+        if (--depth == 0) {
+          return i;
+        }
+      } else {
+        i++;
+      }
+    }
+    return sql.length();
+  }
+
+  private static int dollarQuotedEnd(String sql, int start) {
+    int i = start + 1;
+    if (i < sql.length() && (Character.isLetter(sql.charAt(i)) || sql.charAt(i) == '_')) {
+      while (i < sql.length() && isNamePart(sql.charAt(i)) && sql.charAt(i) != '$') {
+        i++;
+      }
+    }
+    if (i >= sql.length()
+        || sql.charAt(i) != '$'
+        || (i == start + 1 && sql.startsWith("$${", start))) {
+      return -1;
+    }
+    String delimiter = sql.substring(start, i + 1);
+    int end = sql.indexOf(delimiter, i + 1);
+    return end < 0 ? sql.length() : end + delimiter.length();
+  }
+
+  private static int escapeStringEnd(String sql, int from) {
+    int i = from;
+    while (i < sql.length()) {
+      char d = sql.charAt(i);
+      if (d == '\\') {
+        i += 2;
+      } else if (d == '\'' && i + 1 < sql.length() && sql.charAt(i + 1) == '\'') {
+        i += 2;
+      } else if (d == '\'') {
+        return i + 1;
+      } else {
+        i++;
+      }
+    }
+    return sql.length();
+  }
+
+  private static boolean isNamePart(char c) {
+    return Character.isLetterOrDigit(c) || c == '_' || c == '$';
+  }
+
+  /**
+   * pgjdbc reads an enum as a {@code String} and would bind it as {@code varchar}, and binds a bit
+   * string (and a {@code NULL} of {@code BIT}) as {@code boolean}, which those columns reject; they
+   * are sent untyped ({@code OTHER}) so the server takes the column's type, as {@link
+   * TextCastDataType} does for datasets.
+   */
+  @Override
+  public void bindHookValue(
+      PreparedStatement statement, int index, Object value, int jdbcType, String typeName)
+      throws SQLException {
+    if (isEnum(jdbcType, typeName) || isBitString(typeName)) {
+      statement.setObject(index, value, Types.OTHER);
+    } else {
+      DatabaseEngine.super.bindHookValue(statement, index, value, jdbcType, typeName);
+    }
+  }
+
+  /** The names pgjdbc reports for character columns; any other {@code VARCHAR} is an enum. */
+  private static final Set<String> TEXT_TYPES = Set.of("varchar", "text", "bpchar", "char", "name");
+
+  static boolean isEnum(int sqlType, String sqlTypeName) {
+    return sqlType == Types.VARCHAR
+        && sqlTypeName != null
+        && !TEXT_TYPES.contains(sqlTypeName.toLowerCase(Locale.ROOT));
+  }
+
+  private static boolean isBitString(String typeName) {
+    return "bit".equalsIgnoreCase(typeName) || "varbit".equalsIgnoreCase(typeName);
+  }
+
+  private static boolean isTimestampTz(String typeName) {
+    return typeName != null && typeName.equalsIgnoreCase("timestamptz");
   }
 
   @Override
@@ -64,10 +225,6 @@ public final class PostgresqlEngine implements DatabaseEngine {
    */
   private static final class DataTypes extends PostgresqlDataTypeFactory {
 
-    /** The names pgjdbc reports for character columns; any other {@code VARCHAR} is an enum. */
-    private static final Set<String> TEXT_TYPES =
-        Set.of("varchar", "text", "bpchar", "char", "name");
-
     @Override
     public DataType createDataType(int sqlType, String sqlTypeName) throws DataTypeException {
       DataType created = super.createDataType(sqlType, sqlTypeName);
@@ -79,12 +236,6 @@ public final class PostgresqlEngine implements DatabaseEngine {
       }
       return FloatingPointDataType.replacing(
           LocalTimestampDataType.withoutTimeZone(created, sqlTypeName));
-    }
-
-    private static boolean isEnum(int sqlType, String sqlTypeName) {
-      return sqlType == Types.VARCHAR
-          && sqlTypeName != null
-          && !TEXT_TYPES.contains(sqlTypeName.toLowerCase(Locale.ROOT));
     }
   }
 
