@@ -10,8 +10,8 @@ InitiumDb is intended **only for development and QA databases, never production*
 
 ## Overview
 
-- **Capture only what matters.** Developers first establish the desired data manually, using application interfaces or SQL. `capture` then executes configured `SELECT` statements and exports the selected rows.
-- **Prepare test data on demand.** `prepare` applies saved datasets to a target development or QA environment before tests.
+- **Capture only what matters.** Developers first establish the desired data manually, using application interfaces or SQL. `idb-capture` then executes configured `SELECT` statements and exports the selected rows.
+- **Prepare test data on demand.** `idb-prepare` applies saved datasets to a target development or QA environment before tests.
 - **Keep test definitions in Git.** Case definitions, queries, SQL hooks and datasets live in the application's test repository.
 - **Separate logical and physical configuration.** A case references logical database aliases; environment configuration maps them to JDBC connections.
 - **Keep credentials outside test artifacts.** Secrets are resolved at runtime, for local executions and CI/CD alike.
@@ -67,7 +67,7 @@ Practices that reduce omissions:
 4. **No database installation.** No InitiumDb tables, locks, users, roles, grants, sequences or other objects are created.
 5. **No automatic recovery.** No persisted execution state or resume-from-checkpoint logic.
 6. **Database-enforced integrity.** Existing foreign keys and constraints remain authoritative. If an operation violates a constraint, the database reports an error and the command fails.
-7. **Minimal privilege.** `capture` requires read access to selected tables; `prepare` requires only the DML privileges needed for the configured data and optional SQL hooks.
+7. **Minimal privilege.** `idb-capture` requires read access to selected tables; `idb-prepare` requires only the DML privileges needed for the configured data and optional SQL hooks.
 8. **No production-data-management guarantees.** InitiumDb is not an ILM, archiving, backup, masking or full database restoration tool.
 
 ## Installation
@@ -118,6 +118,10 @@ Every command accepts `--help` (or `-h`), which prints its usage, and `--version
 
 ### `idb-capture`
 
+```bash
+idb-capture --case path/to/testdata/regression --environment dev [--config-dir dir]
+```
+
 1. Read the case definition and the selected environment configuration.
 2. Resolve each logical database alias and its credentials.
 3. Execute the configured `SELECT` statements in their declared order.
@@ -129,6 +133,10 @@ Every command accepts `--help` (or `-h`), which prints its usage, and `--version
 Rows are streamed from the database straight into a temporary file (`.idb-capture-*.tmp`, next to the dataset) and never held in memory; no extra query is run to count them. Each table is reported with its row count and elapsed time when it finishes (`CUSTOMER: 120 row(s) in 0.42 s`), followed by the alias line (`Alias GL (dev) 1 of 2: captured 6 table(s) into ... in 3.10 s`). The temporary file replaces the dataset only when every table succeeded, so a failed or interrupted capture keeps the previous dataset.
 
 ### `idb-prepare`
+
+```bash
+idb-prepare --case path/to/testdata/regression --environment qa [--config-dir dir] [--refresh optimized|dbunit]
+```
 
 1. Read the case definition and the selected environment configuration.
 2. Resolve each logical database alias and its credentials.
@@ -411,12 +419,11 @@ Engine-specific behavior is isolated in a thin per-engine profile (DBUnit data t
 - Commands execute sequentially and stop on failure.
 - Successful execution returns exit code `0`; any failure returns `1`.
 - Logs identify the case, environment, database alias, current alias (with its position) and error cause without revealing credentials.
-- There is no dedicated `validate` command, `--mode` switch, preview mode, persistent status table or execution checkpoint.
 - Input validation occurs naturally when commands read configuration and files; invalid input fails the command.
 - Re-running `idb-prepare` starts from the first configured alias, even if a prior run partially completed.
-- Repeatability depends on the configured dataset and SQL hooks. SQL hooks that are not idempotent can prevent safe reruns.
+- Repeatability depends on the configured dataset and SQL hooks. SQL hooks that are not idempotent can prevent safe reruns; a statement that must not run twice can be guarded with `-- idb:run-if` or `-- idb:skip-if` (see [Conditional statements](#conditional-statements)).
 
-## Limitations
+## What InitiumDb does not do
 
 - **Not for production databases.**
 - **Not a full rollback or snapshot restore.** `REFRESH` does not remove all changes left by previous tests.
